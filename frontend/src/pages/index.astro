@@ -41,13 +41,57 @@ rawData.forEach(row => {
 });
 
 const xAxisData = Array.from(timestamps);
+
+// UI/UX "Don't Make Me Think" Calculations (Based on last 10 minutes approx 20 data points)
+const evaluateStatus = (dataArr) => {
+  if (!dataArr || dataArr.length === 0) return { status: 'unknown', msg: 'No Data' };
+  
+  // Get last 20 elements (approx 10 mins at 30s intervals)
+  const recentData = dataArr.slice(-20).filter(val => val !== null);
+  if (recentData.length === 0) return { status: 'offline', msg: 'Disconnected' };
+
+  const avg = recentData.reduce((a, b) => a + b, 0) / recentData.length;
+  const latest = recentData[recentData.length - 1];
+
+  if (latest > 100 || avg > 80) return { status: 'bad', msg: 'High Latency' };
+  if (latest > 50 || avg > 40) return { status: 'warn', msg: 'Degraded' };
+  return { status: 'good', msg: 'Healthy' };
+};
+
+const localStatus = evaluateStatus(seriesData.local);
+const ispStatus = evaluateStatus(seriesData.isp_gateway);
+const dnsStatus = evaluateStatus(seriesData.external_dns);
+
+// Overall network interpretation
+let overallStateMsg = "All Systems Nominal. Your network is performing normally.";
+let overallStateColor = "#3fb950"; // Green
+
+if (localStatus.status === 'bad' || localStatus.status === 'offline') {
+  overallStateMsg = "Critical Local Network Issue! Check your Wi-Fi router or LAN cables.";
+  overallStateColor = "#f85149"; // Red
+} else if (ispStatus.status === 'bad' || ispStatus.status === 'offline') {
+  overallStateMsg = "ISP Gateway Congestion! The bottleneck is between your house and the ISP.";
+  overallStateColor = "#d29922"; // Yellow
+} else if (dnsStatus.status === 'bad' || dnsStatus.status === 'offline') {
+  overallStateMsg = "Widespread Internet Routing Issue! Local and ISP connections are fine, but the broader internet backbone is struggling.";
+  overallStateColor = "#f85149"; // Red
+} else if (ispStatus.status === 'warn' || dnsStatus.status === 'warn') {
+  overallStateMsg = "Minor Network Degradation detected. Connections are active but slower than usual.";
+  overallStateColor = "#d29922"; // Yellow
+}
 ---
 
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+    <meta name="theme-color" content="#0d1117">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>ISP Health Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script is:inline src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
       :root {
         --bg-color: #0d1117;
@@ -103,6 +147,75 @@ const xAxisData = Array.from(timestamps);
         70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(88, 166, 255, 0); }
         100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(88, 166, 255, 0); }
       }
+      .legend-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+      }
+      .legend-item {
+        background: var(--card-bg);
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .legend-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        color: #f0f6fc;
+      }
+      .legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .legend-desc {
+        font-size: 0.875rem;
+        color: #8b949e;
+        line-height: 1.4;
+      }
+      .summary-banner {
+        background: var(--card-bg);
+        border: 1px solid #30363d;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        border-left: 6px solid;
+      }
+      .summary-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #f0f6fc;
+      }
+      .quick-stats {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .stat-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: 9999px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid #30363d;
+      }
+      .badge-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
       #chart-container { 
         background: var(--card-bg); 
         border-radius: 12px; 
@@ -132,6 +245,51 @@ const xAxisData = Array.from(timestamps);
           Monitoring Last 3 Hours
         </div>
       </header>
+
+      {rawData.length > 0 && (
+        <div class="summary-banner" style={`border-left-color: ${overallStateColor}`}>
+          <div class="summary-title">{overallStateMsg}</div>
+          <div class="quick-stats">
+            <div class="stat-badge">
+              <div class="badge-dot" style={`background-color: ${localStatus.status === 'good' ? '#3fb950' : localStatus.status === 'warn' ? '#d29922' : '#f85149'}`}></div>
+              Home Router Phase: {localStatus.msg}
+            </div>
+            <div class="stat-badge">
+              <div class="badge-dot" style={`background-color: ${ispStatus.status === 'good' ? '#3fb950' : ispStatus.status === 'warn' ? '#d29922' : '#f85149'}`}></div>
+              ISP Gateway Phase: {ispStatus.msg}
+            </div>
+            <div class="stat-badge">
+              <div class="badge-dot" style={`background-color: ${dnsStatus.status === 'good' ? '#3fb950' : dnsStatus.status === 'warn' ? '#d29922' : '#f85149'}`}></div>
+              Global Internet Phase: {dnsStatus.msg}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <div class="legend-container">
+        <div class="legend-item">
+          <div class="legend-header">
+            <div class="legend-dot" style="background-color: #3fb950"></div>
+            Local Router (<span style="color: #3fb950">Green</span>)
+          </div>
+          <div class="legend-desc">Your local home network Wi-Fi or LAN connection. Latency here should consistently be less than 5ms.</div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-header">
+            <div class="legend-dot" style="background-color: #d29922"></div>
+            ISP Gateway (<span style="color: #d29922">Yellow</span>)
+          </div>
+          <div class="legend-desc">The first hop connecting your home to your Internet Service Provider. Spikes here indicate neighborhood cable/fiber congestion.</div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-header">
+            <div class="legend-dot" style="background-color: #f85149"></div>
+            External DNS (<span style="color: #f85149">Red</span>)
+          </div>
+          <div class="legend-desc">Wider internet connectivity (1.1.1.1). If this spikes while your ISP Gateway stays low, the broader internet routing backbone is experiencing issues.</div>
+        </div>
+      </div>
+
       
       {rawData.length === 0 ? (
         <div class="error-state">

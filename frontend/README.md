@@ -1,0 +1,59 @@
+# ISP Health Dashboard
+
+A local-first, lightweight time-series data collection and visualization system to monitor network health. It programmatically differentiates between Local Area Network (LAN) bottlenecks, ISP gateway failures, and wider internet backbone outages through continuous background ICMP polling.
+
+## Project Structure
+
+This project is separated into a `backend` daemon and a `frontend` dashboard.
+
+* `backend/` - A Python script utilizing `sqlite3` and `subprocess.run` to execute and record pings every 30 seconds. Managed by `uv`.
+* `frontend/` - An SSR Astro web interface visualizing the SQLite data using Apache ECharts. 
+
+## Setup & Running
+
+### 1. The Prober (Backend)
+
+The backend daemon maps network latency to three distinct targets to isolate bottlenecks:
+1. `LOCAL_ROUTER_IP`: `192.168.1.1`
+2. `ISP_GATEWAY_IP`: `10.56.0.1`
+3. `EXTERNAL_DNS_IP`: `1.1.1.1`
+
+**Interactive Run:**
+```bash
+cd backend
+uv run prober.py
+```
+
+**Background Daemon (macOS):**
+To run the script invisibly on startup, load the provided `launchd` service:
+```bash
+launchctl load -w backend/com.user.isphealth.plist
+```
+*(To stop it: `launchctl unload -w backend/com.user.isphealth.plist`)*
+*(To check output: `tail -f backend/prober.log`)*
+
+### 2. The Dashboard (Frontend)
+
+The frontend is an Astro application that loads the raw `network_metrics.db` and maps it directly into an interactive ECharts visualization. It will automatically poll for fresh database records every 30 seconds.
+
+**Running the Dashboard:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then visit `http://localhost:4321` in your browser.
+
+## Database
+
+Data is logged locally to `backend/network_metrics.db`.
+The `network_metrics` table has the following schema:
+* `id` (INTEGER PRIMARY KEY)
+* `timestamp` (DATETIME)
+* `target_node` (TEXT)
+* `latency_ms` (REAL)
+
+## Future Improvements
+
+* Desktop OS notifications are currently implemented via AppleScript (`osascript`) for macOS when the ISP latency exceeds baseline parameters by >200%.

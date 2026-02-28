@@ -1,0 +1,97 @@
+import sqlite3
+import time
+from datetime import datetime, timezone
+import os
+
+# Note: We are switching ping method or running ping3 with sudo might be required.
+# As ping3 uses raw sockets requiring root privileges on Mac,
+# we use the subprocess ping for simplicity to avoid sudo.
+import subprocess
+
+# Configuration
+LOCAL_ROUTER_IP = "192.168.1.1" # Change to your router's IP
+ISP_GATEWAY_IP = "10.56.0.1" # Adjusted to Hop 3 to bypass Double NAT
+EXTERNAL_DNS_IP = "1.1.1.1"     # Cloudflare DNS
+DB_PATH = os.path.join(os.path.dirname(__file__), "network_metrics.db")
+INTERVAL_SECONDS = 30
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS network_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            target_node TEXT,
+            latency_ms REAL
+        )
+    ''')
+    # Index for faster time-series querying
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON network_metrics(timestamp)')
+    conn.commit()
+    return conn
+
+def measure_latency(ip_address):
+    try:
+        # Use native macOS ping command: -c 1 (count 1), -t 2 (timeout 2s)
+        # We use this instead of ping3 because ping3 requires root on macOS.
+        result = subprocess.run(
+            ['ping', '-c', '1', '-t', '2', ip_address],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            # Parse latency, e.g. "time=1.062 ms"
+            for line in result.stdout.split('\n'):
+                if 'time=' in line:
+                    return float(line.split('time=')[1].split(' ')[0])
+        return -1.0
+    except Exception:
+        return -1.0
+
+def run_prober():
+    conn = init_db()
+    cursor = conn.cursor()
+    
+    print(f"Starting prober. Logging to {DB_PATH}...")
+    
+    targets = {
+        'local': LOCAL_ROUTER_IP,
+        'isp_gateway': ISP_GATEWAY_IP,
+        'external_dns': EXTERNAL_DNS_IP
+    }
+    
+    isp_history = []
+    
+    while True:
+        now = datetime.now(timezone.utc).isoformat()
+        for node_name, ip in targets.items():
+            latency = measure_latency(ip)
+            
+            cursor.execute(
+                "INSERT INTO network_metrics (timestamp, target_node, latency_ms) VALUES (?, ?, ?)",
+                (now, node_name, latency)
+            )
+            print(f"[{now}] {node_name} ({ip}): {latency:.2f} ms")
+            
+            # Anomaly Detection for ISP latency
+            if node_name == 'isp_gateway' and latency > 0:
+                isp_history.append(latency)
+                if len(isp_history) > 20: # Keep the last 10 minutes (20 * 30s)
+                    isp_history.pop(0)
+                    
+                    # Calculate moving average
+                    moving_avg = sum(isp_history) / len(isp_history)
+                    
+                    # If current latency is double the moving average and > 50ms, trigger alert
+                    if latency > (moving_avg * 2) and latency > 50:
+                        msg = f"⚠️ ANOMALY DETECTED: ISP latency spiked to {latency:.2f}ms! (Baseline: {moving_avg:.2f}ms)"
+                        print(msg)
+                        # Fire a local macOS notification
+                        os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
+
+        conn.commit()
+        time.sleep(INTERVAL_SECONDS)
+
+if __name__ == "__main__":
+    run_prober()

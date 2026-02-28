@@ -2,12 +2,21 @@
 
 A local-first, lightweight time-series data collection and visualization system to monitor network health. It programmatically differentiates between Local Area Network (LAN) bottlenecks, ISP gateway failures, and wider internet backbone outages through continuous background ICMP polling.
 
+📖 **[Read the Full System Architecture Explainer](ARCHITECTURE.md)**
+
+## Features
+- **Cross-Platform Backend:** Runs silently via native `subprocess` pings on macOS (`launchd`) and Linux (`systemd`).
+- **"Don't Make Me Think" Dashboard:** Dynamic green/yellow/red status banners that interpret latency without requiring you to read the chart.
+- **Home Network Deployment:** Accessible to any browser on the LAN. 
+- **PWA Ready:** Install the dashboard directly to any iOS/Android home screen.
+- **Native OS Alerts:** Fires `osascript` (macOS) or `notify-send` (Linux) desktop alerts during critical congestion or outages.
+
 ## Project Structure
 
 This project is separated into a `backend` daemon and a `frontend` dashboard.
 
 * `backend/` - A Python script utilizing `sqlite3` and `subprocess.run` to execute and record pings every 30 seconds. Managed by `uv`.
-* `frontend/` - An SSR Astro web interface visualizing the SQLite data using Apache ECharts. 
+* `frontend/` - An SSR Astro web PWA visualizing the SQLite data using Apache ECharts.
 
 ## Setup & Running
 

@@ -24,12 +24,19 @@ cd backend
 uv run prober.py
 ```
 
-**Background Daemon (macOS):**
-To run the script invisibly on startup, load the provided `launchd` service:
+**Background Daemon (macOS launchd):**
+To run the script invisibly on startup for Mac environments:
 ```bash
 launchctl load -w backend/com.user.isphealth.plist
 ```
 *(To stop it: `launchctl unload -w backend/com.user.isphealth.plist`)*
+
+**Background Daemon (Linux systemd):**
+For Debian/Ubuntu/Mint servers, modify and copy the provided service file:
+```bash
+sudo cp backend/isp-health.service /etc/systemd/system/
+sudo systemctl enable --now isp-health.service
+```
 *(To check output: `tail -f backend/prober.log`)*
 
 ### 2. The Dashboard (Frontend)

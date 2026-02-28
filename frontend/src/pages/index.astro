@@ -348,28 +348,46 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
                 name: 'Local Router', 
                 type: 'line', 
                 data: seriesData.local, 
-                smooth: true, 
+                smooth: 0.3, 
                 showSymbol: false,
                 color: '#3fb950', // Success green
-                lineStyle: { width: 2 }
+                lineStyle: { width: 3 },
+                areaStyle: {
+                  color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(63, 185, 80, 0.4)' },
+                    { offset: 1, color: 'rgba(63, 185, 80, 0.0)' }
+                  ])
+                }
               },
               { 
                 name: 'ISP Gateway', 
                 type: 'line', 
                 data: seriesData.isp_gateway, 
-                smooth: true, 
+                smooth: 0.3, 
                 showSymbol: false,
                 color: '#d29922', // Warning yellow
-                lineStyle: { width: 2 }
+                lineStyle: { width: 3 },
+                areaStyle: {
+                  color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(210, 153, 34, 0.4)' },
+                    { offset: 1, color: 'rgba(210, 153, 34, 0.0)' }
+                  ])
+                }
               },
               { 
                 name: 'External DNS (1.1.1.1)', 
                 type: 'line', 
                 data: seriesData.external_dns, 
-                smooth: true, 
+                smooth: 0.3, 
                 showSymbol: false,
                 color: '#f85149', // Danger red
-                lineStyle: { width: 2 }
+                lineStyle: { width: 3 },
+                areaStyle: {
+                  color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(248, 81, 73, 0.4)' },
+                    { offset: 1, color: 'rgba(248, 81, 73, 0.0)' }
+                  ])
+                }
               }
             ]
           };

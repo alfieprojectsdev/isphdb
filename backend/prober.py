@@ -75,20 +75,25 @@ def run_prober():
             print(f"[{now}] {node_name} ({ip}): {latency:.2f} ms")
             
             # Anomaly Detection for ISP latency
-            if node_name == 'isp_gateway' and latency > 0:
-                isp_history.append(latency)
-                if len(isp_history) > 20: # Keep the last 10 minutes (20 * 30s)
-                    isp_history.pop(0)
-                    
-                    # Calculate moving average
-                    moving_avg = sum(isp_history) / len(isp_history)
-                    
-                    # If current latency is double the moving average and > 50ms, trigger alert
-                    if latency > (moving_avg * 2) and latency > 50:
-                        msg = f"⚠️ ANOMALY DETECTED: ISP latency spiked to {latency:.2f}ms! (Baseline: {moving_avg:.2f}ms)"
-                        print(msg)
-                        # Fire a local macOS notification
-                        os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
+            if node_name == 'isp_gateway':
+                if latency > 0:
+                    isp_history.append(latency)
+                    if len(isp_history) > 20: # Keep the last 10 minutes (20 * 30s)
+                        isp_history.pop(0)
+                        
+                        # Calculate moving average
+                        moving_avg = sum(isp_history) / len(isp_history)
+                        
+                        # If current latency is double the moving average and > 50ms, trigger alert
+                        if latency > (moving_avg * 2) and latency > 50:
+                            msg = f"⚠️ ANOMALY DETECTED: ISP latency spiked to {latency:.2f}ms! (Baseline: {moving_avg:.2f}ms)"
+                            print(msg)
+                            # Fire a local macOS notification
+                            os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
+                elif latency == -1.0:
+                    msg = "🚨 CRITICAL: ISP Gateway is unreachable!"
+                    print(msg)
+                    os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
 
         conn.commit()
         time.sleep(INTERVAL_SECONDS)

@@ -30,6 +30,26 @@ Here is a summary of what was accomplished:
 
 ---
 
+## Session 2
+
+5. **Linux Cross-Platform Support**
+   * Fixed `prober.py` to dynamically select the correct `ping` timeout flag at runtime: `-W` on Linux vs `-t` on macOS. The original hardcoded `-t` flag was silently setting TTL=2 on Linux, causing all pings to fail.
+   * Fixed alert notifications to use `notify-send` on Linux instead of the macOS-only `osascript`.
+   * Extracted alert logic into a `send_alert()` helper for clean platform branching.
+
+6. **Linux Systemd Deployment (No Root Required)**
+   * Created `backend/isp-health.service` and `frontend/isp-health-frontend.service` as systemd **user** units, installable without `sudo`.
+   * Built the Astro frontend for production (`npm run build`) and configured the standalone Node server to bind to `HOST=0.0.0.0 PORT=4321`.
+   * Enabled `loginctl enable-linger` so both services survive user logout and start automatically on boot.
+   * Both services are live: the prober writing to SQLite, the dashboard accessible across the home network at `http://192.168.1.73:4321`.
+
+7. **Documentation**
+   * Added `TECHDOCS.md` with build/run commands and a high-level architecture summary for future   development sessions.
+   * Updated `README.md` to link to `TECHDOCS.md`.
+   * Updated `TECHDOCS.md` with full Linux service install, status, and log commands.
+
+---
+
 ## Manual Effort Estimation
 
 If a single web developer were to code this entire system by hand from start to finish (including debugging, documentation, and environment setup), the estimated effort would be roughly **8 to 11 hours (1 to 1.5 full working days)**.

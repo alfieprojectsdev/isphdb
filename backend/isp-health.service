@@ -1,0 +1,15 @@
+[Unit]
+Description=ISP Health Prober
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/finch/repos/isphdb/backend
+ExecStart=/home/finch/.local/bin/uv run prober.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/finch/repos/isphdb/backend/prober.log
+StandardError=append:/home/finch/repos/isphdb/backend/prober.error.log
+
+[Install]
+WantedBy=default.target

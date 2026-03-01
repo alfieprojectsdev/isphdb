@@ -1,11 +1,8 @@
 import sqlite3
+import sys
 import time
 from datetime import datetime, timezone
 import os
-
-# Note: We are switching ping method or running ping3 with sudo might be required.
-# As ping3 uses raw sockets requiring root privileges on Mac,
-# we use the subprocess ping for simplicity to avoid sudo.
 import subprocess
 
 # Configuration
@@ -31,12 +28,19 @@ def init_db():
     conn.commit()
     return conn
 
+def send_alert(msg):
+    if sys.platform == 'darwin':
+        os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
+    else:
+        os.system(f'notify-send "ISP Health Monitor" "{msg}"')
+
 def measure_latency(ip_address):
     try:
-        # Use native macOS ping command: -c 1 (count 1), -t 2 (timeout 2s)
-        # We use this instead of ping3 because ping3 requires root on macOS.
+        # Use the OS native ping binary to avoid needing root (raw sockets).
+        # macOS uses -t for timeout; Linux uses -W.
+        timeout_flag = '-t' if sys.platform == 'darwin' else '-W'
         result = subprocess.run(
-            ['ping', '-c', '1', '-t', '2', ip_address],
+            ['ping', '-c', '1', timeout_flag, '2', ip_address],
             capture_output=True,
             text=True
         )
@@ -88,12 +92,11 @@ def run_prober():
                         if latency > (moving_avg * 2) and latency > 50:
                             msg = f"⚠️ ANOMALY DETECTED: ISP latency spiked to {latency:.2f}ms! (Baseline: {moving_avg:.2f}ms)"
                             print(msg)
-                            # Fire a local macOS notification
-                            os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
+                            send_alert(msg)
                 elif latency == -1.0:
                     msg = "🚨 CRITICAL: ISP Gateway is unreachable!"
                     print(msg)
-                    os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
+                    send_alert(msg)
 
         conn.commit()
         time.sleep(INTERVAL_SECONDS)

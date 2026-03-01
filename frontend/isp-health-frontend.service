@@ -1,0 +1,15 @@
+[Unit]
+Description=ISP Health Dashboard (Frontend)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/finch/repos/isphdb/frontend
+ExecStart=/usr/bin/node ./dist/server/entry.mjs
+Restart=always
+RestartSec=5
+Environment=HOST=0.0.0.0
+Environment=PORT=4321
+
+[Install]
+WantedBy=default.target

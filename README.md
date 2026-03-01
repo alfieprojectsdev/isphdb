@@ -2,7 +2,7 @@
 
 A local-first, lightweight time-series data collection and visualization system to monitor network health. It programmatically differentiates between Local Area Network (LAN) bottlenecks, ISP gateway failures, and wider internet backbone outages through continuous background ICMP polling.
 
-📖 **[Read the Full System Architecture Explainer](ARCHITECTURE.md)**
+📖 **[Read the Full System Architecture Explainer](ARCHITECTURE.md)** | 🤖 **[Technical Documentation](TECHDOCS.md)**
 
 ## Features
 - **Cross-Platform Backend:** Runs silently via native `subprocess` pings on macOS (`launchd`) and Linux (`systemd`).

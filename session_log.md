@@ -50,6 +50,22 @@ Here is a summary of what was accomplished:
 
 ---
 
+## Session 3
+
+8. **Repository Hygiene**
+   * Gitignored `network_metrics.db` (runtime artifact, recreated by prober on first run) and `*.log` files.
+   * Untracked `network_metrics.db` from git history via `git rm --cached`.
+   * Committed updated `frontend/package-lock.json`.
+
+9. **Network Reconfiguration (PHIVOLCS Network)**
+   * Moved deployment to PHIVOLCS institutional network (`192.168.40.x`).
+   * Ran `traceroute` to identify new hops: local router `<LAN_IP>` (hop 1), ISP gateway `10.0.0.1` (hop 2, first public IP — no double NAT on this network).
+   * Updated `LOCAL_ROUTER_IP` and `ISP_GATEWAY_IP` in `prober.py` accordingly.
+   * Fixed stdout log buffering by adding `PYTHONUNBUFFERED=1` to `isp-health.service` — logs were silently buffered when Python stdout was redirected to a file.
+   * Dashboard live at `http://<LAN_IP>:4321` on the PHIVOLCS network.
+
+---
+
 ## Manual Effort Estimation
 
 If a single web developer were to code this entire system by hand from start to finish (including debugging, documentation, and environment setup), the estimated effort would be roughly **8 to 11 hours (1 to 1.5 full working days)**.

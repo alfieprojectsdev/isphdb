@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/home/finch/repos/isphdb/backend
 ExecStart=/home/finch/.local/bin/uv run prober.py
+Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=10
 StandardOutput=append:/home/finch/repos/isphdb/backend/prober.log

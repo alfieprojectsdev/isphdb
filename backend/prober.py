@@ -6,8 +6,8 @@ import os
 import subprocess
 
 # Configuration
-LOCAL_ROUTER_IP = "192.168.1.1" # Change to your router's IP
-ISP_GATEWAY_IP = "10.56.0.1" # Adjusted to Hop 3 to bypass Double NAT
+LOCAL_ROUTER_IP = "<LAN_IP>" # PHIVOLCS network gateway (hop 1)
+ISP_GATEWAY_IP = "10.0.0.1" # ISP gateway (hop 2, first public IP)
 EXTERNAL_DNS_IP = "1.1.1.1"     # Cloudflare DNS
 DB_PATH = os.path.join(os.path.dirname(__file__), "network_metrics.db")
 INTERVAL_SECONDS = 30

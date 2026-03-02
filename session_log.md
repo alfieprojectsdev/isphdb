@@ -66,6 +66,14 @@ Here is a summary of what was accomplished:
 
 ---
 
+## Session 4
+
+10. **Housekeeping & Shutdown**
+    * Confirmed services still running on PHIVOLCS network (`<LAN_IP>`).
+    * Stopped both `isp-health.service` and `isp-health-frontend.service` cleanly before logging off.
+
+---
+
 ## Manual Effort Estimation
 
 If a single web developer were to code this entire system by hand from start to finish (including debugging, documentation, and environment setup), the estimated effort would be roughly **8 to 11 hours (1 to 1.5 full working days)**.

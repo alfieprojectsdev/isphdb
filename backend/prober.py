@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 import os
 import subprocess
 
-# Configuration
-LOCAL_ROUTER_IP = "<LAN_IP>" # PHIVOLCS network gateway (hop 1)
-ISP_GATEWAY_IP = "10.0.0.1" # ISP gateway (hop 2, first public IP)
+# Fallback Configuration (Used if auto-detection fails)
+FALLBACK_LOCAL_ROUTER_IP = "<LAN_IP>" # Default to PHIVOLCS or 192.168.1.1
+FALLBACK_ISP_GATEWAY_IP = "10.0.0.1" 
 EXTERNAL_DNS_IP = "1.1.1.1"     # Cloudflare DNS
 DB_PATH = os.path.join(os.path.dirname(__file__), "network_metrics.db")
 INTERVAL_SECONDS = 30
@@ -53,15 +53,80 @@ def measure_latency(ip_address):
     except Exception:
         return -1.0
 
+def get_default_gateway():
+    """Dynamically determine the LAN gateway IP address."""
+    try:
+        if sys.platform == 'darwin':
+            # macOS: netstat -rn
+            res = subprocess.run(['netstat', '-rn'], capture_output=True, text=True)
+            for line in res.stdout.splitlines():
+                if line.startswith('default'):
+                    # e.g. "default   192.168.1.1   UGScg   ... "
+                    parts = line.split()
+                    if len(parts) > 1:
+                        return parts[1]
+        else:
+            # Linux: ip route
+            res = subprocess.run(['ip', 'route'], capture_output=True, text=True)
+            for line in res.stdout.splitlines():
+                if line.startswith('default via'):
+                    # e.g. "default via 192.168.1.1 dev eth0 ..."
+                    parts = line.split()
+                    if len(parts) > 2:
+                        return parts[2]
+    except Exception as e:
+        print(f"Error auto-detecting default gateway: {e}")
+    return FALLBACK_LOCAL_ROUTER_IP
+
+def get_isp_gateway():
+    """Dynamically trace route to DNS and extract the first hop outside the local network."""
+    try:
+        if sys.platform == 'darwin':
+            # traceroute to 1.1.1.1, max 5 hops, numeric IPs only
+            res = subprocess.run(['traceroute', '-m', '5', '-n', EXTERNAL_DNS_IP], capture_output=True, text=True)
+            for line in res.stdout.splitlines():
+                stripped_line = line.strip()
+                if len(stripped_line) > 0 and stripped_line[0].isdigit(): # Hit a hop line
+                    parts = stripped_line.split()
+                    if len(parts) > 1 and parts[1] != '*':
+                        ip = parts[1]
+                        # Skip Local Double NAT (e.g. 192.168.x.x or 172.16.x.x sometimes used locally)
+                        if not ip.startswith('192.168.'):
+                            return ip
+        else:
+            # Linux: use tracepath or traceroute
+            cmd = ['tracepath', '-m', '5', '-n', EXTERNAL_DNS_IP] if os.path.exists('/usr/bin/tracepath') else ['traceroute', '-m', '5', '-n', EXTERNAL_DNS_IP]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) > 1:
+                    ip = None
+                    if line.strip().startswith(tuple(str(i)+':' for i in range(1, 6))) and parts[1] != 'no': # tracepath format
+                        ip = parts[1]
+                    elif line.strip().startswith(tuple(str(i)+' ' for i in range(1, 6))) and parts[1] != '*': # traceroute format
+                        ip = parts[1]
+                        
+                    if ip and not ip.startswith('192.168.'):
+                        return ip
+    except Exception as e:
+        print(f"Error auto-detecting ISP gateway: {e}")
+    return FALLBACK_ISP_GATEWAY_IP
+
 def run_prober():
     conn = init_db()
     cursor = conn.cursor()
     
+    # Auto-detect gateways inside the startup sequence
+    local_gateway = get_default_gateway()
+    isp_gateway = get_isp_gateway()
+
     print(f"Starting prober. Logging to {DB_PATH}...")
+    print(f"Auto-Detected Local Router: {local_gateway}")
+    print(f"Auto-Detected ISP Gateway: {isp_gateway}")
     
     targets = {
-        'local': LOCAL_ROUTER_IP,
-        'isp_gateway': ISP_GATEWAY_IP,
+        'local': local_gateway,
+        'isp_gateway': isp_gateway,
         'external_dns': EXTERNAL_DNS_IP
     }
     

@@ -34,20 +34,16 @@ cd backend
 uv run prober.py
 ```
 
-**Background Daemon (macOS launchd):**
-To run the script invisibly on startup for Mac environments:
+**Daemon Management (macOS & Linux):**
+We provide a universal helper script that automatically detects your OS, unzombies processes, restarts the background service, and outputs your live Dashboard URLs. 
 ```bash
-launchctl load -w backend/com.user.isphealth.plist
+./reload-daemon.sh
 ```
-*(To stop it: `launchctl unload -w backend/com.user.isphealth.plist`)*
+*(If you travel between networks, simply re-run this script to auto-bind to the new routers).*
 
-**Background Daemon (Linux systemd):**
-For Debian/Ubuntu/Mint servers, modify and copy the provided service file:
-```bash
-sudo cp backend/isp-health.service /etc/systemd/system/
-sudo systemctl enable --now isp-health.service
-```
-*(To check output: `tail -f backend/prober.log`)*
+You can still manage the services manually if you prefer:
+* macOS: `launchctl load -w backend/com.user.isphealth.plist`
+* Linux: `sudo systemctl enable --now isp-health.service`
 
 ### 2. The Dashboard (Frontend)
 

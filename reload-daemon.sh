@@ -44,3 +44,20 @@ fi
 echo ""
 echo "Note: The Python prober inherently auto-detects your active Local Router and ISP Gateway on startup."
 echo "If you swap between home and office networks, simply re-run this script to bind the daemon to the new network."
+echo ""
+
+# Output the Dashboard URLs
+echo "=== Dashboard Access ==="
+echo "Local Access: http://localhost:4321"
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # Try getting primary en0 interface IP first, then en1 if fallback needed
+    LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)
+else
+    # Linux hostname -I returns all IPs, grab the first one
+    LOCAL_IP=$(hostname -I | awk '{print $1}')
+fi
+
+if [ ! -z "$LOCAL_IP" ]; then
+    echo "Network/Mobile Access: http://$LOCAL_IP:4321"
+fi

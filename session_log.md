@@ -74,6 +74,21 @@ Here is a summary of what was accomplished:
 
 ---
 
+## Session 5
+
+11. **Dynamic Network Auto-Detection**
+    * Implemented intelligent cross-platform gateway detection in `prober.py`.
+    * Discovers Local Router via `netstat -rn` (macOS) or `ip route` (Linux).
+    * Discovers true ISP Gateway by parsing a 5-hop `traceroute` to `1.1.1.1` and filtering out Double NAT (`192.168.*`) local IP addresses.
+    * Removed hardcoded `LOCAL_ROUTER_IP` and `ISP_GATEWAY_IP` dependencies.
+
+12. **Universal Service Management**
+    * Created `reload-daemon.sh` shell script to simplify daemon management.
+    * Automatically detects OS (Darwin vs Linux) to execute `launchctl` or `systemctl` cleanly.
+    * Enhanced script to automatically detect host IP (`ipconfig` / `hostname -I`) and echo dashboard URLs (`http://<IP>:4321`) to the user upon restart.
+
+---
+
 ## Manual Effort Estimation
 
 If a single web developer were to code this entire system by hand from start to finish (including debugging, documentation, and environment setup), the estimated effort would be roughly **8 to 11 hours (1 to 1.5 full working days)**.

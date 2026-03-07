@@ -86,6 +86,7 @@ Here is a summary of what was accomplished:
     * Created `reload-daemon.sh` shell script to simplify daemon management.
     * Automatically detects OS (Darwin vs Linux) to execute `launchctl` or `systemctl` cleanly.
     * Enhanced script to automatically detect host IP (`ipconfig` / `hostname -I`) and echo dashboard URLs (`http://<IP>:4321`) to the user upon restart.
+    * Refactored script to automatically track down orphaned Astro UI servers and spawn a new Server-Side Rendered (SSR) Dashboard detached via `nohup`, ensuring both backend and frontend layers run simultaneously from one command.
 
 ---
 

@@ -34,29 +34,23 @@ cd backend
 uv run prober.py
 ```
 
-**Daemon Management (macOS & Linux):**
-We provide a universal helper script that automatically detects your OS, unzombies processes, restarts the background service, and outputs your live Dashboard URLs. 
+### Quick Start (macOS & Linux)
+We provide a universal helper script that automatically detects your OS, unzombies processes, restarts the Python background service, statically spawns the Astro UI server using `nohup`, and outputs your live Dashboard URLs to connect.
+
 ```bash
 ./reload-daemon.sh
 ```
-*(If you travel between networks, simply re-run this script to auto-bind to the new routers).*
+*(If you travel between networks, simply re-run this script to automatically detect and bind to the new routers).*
 
-You can still manage the services manually if you prefer:
+You can still manage the background services manually if you prefer:
+
+**1. The Prober (Backend)**
 * macOS: `launchctl load -w backend/com.user.isphealth.plist`
 * Linux: `sudo systemctl enable --now isp-health.service`
+* Interactive: `cd backend && uv run prober.py`
 
-### 2. The Dashboard (Frontend)
-
-The frontend is an Astro application that loads the raw `network_metrics.db` and maps it directly into an interactive ECharts visualization. It will automatically poll for fresh database records every 30 seconds.
-
-**Running the Dashboard:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Then visit `http://localhost:4321` in your browser.
+**2. The Dashboard (Frontend)**
+* Interactive: `cd frontend && npm install && npm run dev -- --host`
 
 ## Database
 

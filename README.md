@@ -6,6 +6,7 @@ A local-first, lightweight time-series data collection and visualization system 
 
 ## Features
 - **Cross-Platform Backend:** Runs silently via native `subprocess` pings on macOS (`launchd`) and Linux (`systemd`).
+- **Dynamic Network Auto-Detection:** Automatically discovers your active Local Router and ISP Gateway using intelligent `netstat` and `traceroute` parsing—no hardcoding required. Move seamlessly between home, office, and coffee shop networks. 
 - **"Don't Make Me Think" Dashboard:** Dynamic green/yellow/red status banners that interpret latency without requiring you to read the chart.
 - **Home Network Deployment:** Accessible to any browser on the LAN. 
 - **PWA Ready:** Install the dashboard directly to any iOS/Android home screen.
@@ -22,10 +23,10 @@ This project is separated into a `backend` daemon and a `frontend` dashboard.
 
 ### 1. The Prober (Backend)
 
-The backend daemon maps network latency to three distinct targets to isolate bottlenecks:
-1. `LOCAL_ROUTER_IP`: `192.168.1.1`
-2. `ISP_GATEWAY_IP`: `10.56.0.1`
-3. `EXTERNAL_DNS_IP`: `1.1.1.1`
+The backend daemon inherently monitors three distinct targets to isolate bottlenecks:
+1. **Local Router (`Auto-detected`)**: The first hop (your Wi-Fi or LAN gateway).
+2. **ISP Gateway (`Auto-detected`)**: The first public IP (bypassing local Double NAT).
+3. **External DNS (`1.1.1.1`)**: Cloudflare's edge servers.
 
 **Interactive Run:**
 ```bash

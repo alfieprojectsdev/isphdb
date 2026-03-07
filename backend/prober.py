@@ -6,9 +6,9 @@ import os
 import subprocess
 
 # Fallback Configuration (Used if auto-detection fails)
-FALLBACK_LOCAL_ROUTER_IP = "<LAN_IP>" # Default to PHIVOLCS or 192.168.1.1
-FALLBACK_ISP_GATEWAY_IP = "10.0.0.1" 
-EXTERNAL_DNS_IP = "1.1.1.1"     # Cloudflare DNS
+FALLBACK_LOCAL_ROUTER_IP = "192.168.1.1" # Default LAN
+FALLBACK_ISP_GATEWAY_IP = "10.0.0.1"     # Standard default
+EXTERNAL_DNS_IP = "1.1.1.1"              # Cloudflare DNS
 DB_PATH = os.path.join(os.path.dirname(__file__), "network_metrics.db")
 INTERVAL_SECONDS = 30
 

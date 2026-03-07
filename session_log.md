@@ -41,7 +41,7 @@ Here is a summary of what was accomplished:
    * Created `backend/isp-health.service` and `frontend/isp-health-frontend.service` as systemd **user** units, installable without `sudo`.
    * Built the Astro frontend for production (`npm run build`) and configured the standalone Node server to bind to `HOST=0.0.0.0 PORT=4321`.
    * Enabled `loginctl enable-linger` so both services survive user logout and start automatically on boot.
-   * Both services are live: the prober writing to SQLite, the dashboard accessible across the home network at `http://192.168.1.73:4321`.
+   * Both services are live: the prober writing to SQLite, the dashboard accessible across the home network at `http://<LAN_IP>:4321`.
 
 7. **Documentation**
    * Added `TECHDOCS.md` with build/run commands and a high-level architecture summary for future   development sessions.
@@ -57,19 +57,19 @@ Here is a summary of what was accomplished:
    * Untracked `network_metrics.db` from git history via `git rm --cached`.
    * Committed updated `frontend/package-lock.json`.
 
-9. **Network Reconfiguration (PHIVOLCS Network)**
-   * Moved deployment to PHIVOLCS institutional network (`192.168.40.x`).
-   * Ran `traceroute` to identify new hops: local router `<LAN_IP>` (hop 1), ISP gateway `10.0.0.1` (hop 2, first public IP — no double NAT on this network).
+9. **Network Reconfiguration (Institutional Network)**
+   * Moved deployment to an institutional network (`192.168.x.x`).
+   * Ran `traceroute` to identify new hops: local router (hop 1), ISP gateway (hop 2, first public IP — no double NAT on this network).
    * Updated `LOCAL_ROUTER_IP` and `ISP_GATEWAY_IP` in `prober.py` accordingly.
    * Fixed stdout log buffering by adding `PYTHONUNBUFFERED=1` to `isp-health.service` — logs were silently buffered when Python stdout was redirected to a file.
-   * Dashboard live at `http://<LAN_IP>:4321` on the PHIVOLCS network.
+   * Dashboard live at `http://<LAN_IP>:4321` on the institutional network.
 
 ---
 
 ## Session 4
 
 10. **Housekeeping & Shutdown**
-    * Confirmed services still running on PHIVOLCS network (`<LAN_IP>`).
+    * Confirmed services still running on the institutional network.
     * Stopped both `isp-health.service` and `isp-health-frontend.service` cleanly before logging off.
 
 ---

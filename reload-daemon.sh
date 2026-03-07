@@ -42,6 +42,17 @@ else
 fi
 
 echo ""
+echo "=== Starting Astro Dashboard (Frontend) ==="
+echo "Stopping any existing Astro dev servers..."
+pkill -f "astro dev" || true
+
+echo "Starting Astro dev server in the background..."
+cd frontend
+nohup npm run dev -- --host > /dev/null 2>&1 &
+cd ..
+echo "✅ Frontend server is now running!"
+
+echo ""
 echo "Note: The Python prober inherently auto-detects your active Local Router and ISP Gateway on startup."
 echo "If you swap between home and office networks, simply re-run this script to bind the daemon to the new network."
 echo ""

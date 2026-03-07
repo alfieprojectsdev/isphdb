@@ -44,8 +44,7 @@ Here is a summary of what was accomplished:
    * Both services are live: the prober writing to SQLite, the dashboard accessible across the home network at `http://<LAN_IP>:4321`.
 
 7. **Documentation**
-   * Added `TECHDOCS.md` with build/run commands and a high-level architecture summary for future   development sessions.
-   * Updated `README.md` to link to `TECHDOCS.md`.
+   * Added `TECHDOCS.md` with build/run commands and a high-level architecture summary for future development sessions.
    * Updated `TECHDOCS.md` with full Linux service install, status, and log commands.
 
 ---

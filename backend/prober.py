@@ -37,7 +37,8 @@ def send_alert(msg):
 def measure_latency(ip_address):
     try:
         # Use the OS native ping binary to avoid needing root (raw sockets).
-        # macOS uses -t for timeout; Linux uses -W.
+        # MacOS uses -t for timeout length in seconds.
+        # Linux uses -W for timeout length in seconds (do not use -t on Linux as it sets TTL).
         timeout_flag = '-t' if sys.platform == 'darwin' else '-W'
         result = subprocess.run(
             ['ping', '-c', '1', timeout_flag, '2', ip_address],
@@ -90,7 +91,12 @@ def get_isp_gateway():
                     parts = stripped_line.split()
                     if len(parts) > 1 and parts[1] != '*':
                         ip = parts[1]
-                        # Skip Local Double NAT (e.g. 192.168.x.x or 172.16.x.x sometimes used locally)
+                        
+                        # [DEVELOPER NOTE: Bypassing Double NAT]
+                        # Home setups often employ a "Double NAT" (e.g., a Google WiFi mesh router plugged into a Converge ISP modem).
+                        # Both routers usually assign local 192.168.x.x addresses.
+                        # To find the true outside ISP gateway (the neighborhood connection node), we ignore any hops
+                        # that fall within the private 192.168.* IP space. The highest routing logic applies here.
                         if not ip.startswith('192.168.'):
                             return ip
         else:

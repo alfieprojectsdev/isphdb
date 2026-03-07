@@ -12,9 +12,14 @@ The system is broken into two decoupled components: a Python-based background da
 
 ### Mechanism
 The prober is an infinite loop script that wakes up every 30 seconds (`INTERVAL_SECONDS`) to perform ICMP pings against three crucial network layers:
-1. **Local Router (`192.168.1.1`)**: Indicates Wi-Fi/LAN health.
-2. **ISP Gateway (`10.56.0.1`)**: Indicates the physical line connecting your home to the neighborhood node (bypassing Double NAT).
+1. **Local Router (`Auto-detected`)**: Indicates Wi-Fi/LAN health.
+2. **ISP Gateway (`Auto-detected`)**: Indicates the physical line connecting your home to the neighborhood node.
 3. **External DNS (`1.1.1.1`)**: Indicates broader internet routing health beyond your ISP.
+
+### Dynamic Network Auto-Detection
+The prober automatically adapts to whatever network the host machine is currently connected to (e.g., smoothly transitioning between a home Wi-Fi and an office LAN).
+- **Local Router:** Discovered by executing `netstat -rn` (macOS) or `ip route` (Linux) and parsing the `default` routing table entry.
+- **ISP Gateway:** Discovered by executing a 5-hop numeric traceroute out to Cloudflare (`1.1.1.1`) and parsing for the **first IP address that does not begin with `192.168.`**. This logic mathematically guarantees the detection of the true ISP handoff node, bypassing any local "Double NAT" configurations (such as a mesh router plugged into an ISP modem).
 
 ### Cross-Platform Architecture
 To avoid the need for `root` or `sudo` privileges (which third-party libraries like `ping3` require for raw socket access), the application utilizes the host operating system's native `ping` utility via the Python `subprocess` module.

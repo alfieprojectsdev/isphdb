@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone
 import os
 import subprocess
+import socket
 
 # Fallback Configuration (Used if auto-detection fails)
 FALLBACK_LOCAL_ROUTER_IP = "192.168.1.1" # Default LAN
@@ -34,6 +35,20 @@ def send_alert(msg):
     else:
         os.system(f'notify-send "ISP Health Monitor" "{msg}"')
 
+def tcp_ping(ip_address, port=53, timeout=2.0):
+    """Fallback latency measurement using TCP socket connection duration if ICMP is blocked."""
+    try:
+        start_time = time.perf_counter()
+        with socket.create_connection((ip_address, port), timeout=timeout):
+            pass
+        end_time = time.perf_counter()
+        return (end_time - start_time) * 1000.0
+    except OSError:
+        # If DNS port 53 fails, try HTTP port 80 just in case it's a web-only router config
+        if port == 53:
+            return tcp_ping(ip_address, port=80, timeout=timeout)
+        return -1.0
+
 def measure_latency(ip_address):
     try:
         # Use the OS native ping binary to avoid needing root (raw sockets).
@@ -50,9 +65,14 @@ def measure_latency(ip_address):
             for line in result.stdout.split('\n'):
                 if 'time=' in line:
                     return float(line.split('time=')[1].split(' ')[0])
-        return -1.0
     except Exception:
-        return -1.0
+        pass
+        
+    # [DEVELOPER NOTE: ICMP Fallback]
+    # If the native ping fails entirely, it is likely because the current Wi-Fi network 
+    # (especially enterprise/public networks) explicitly blocks ICMP Echo Requests.
+    # We fallback to a TCP socket connection (TCP Ping) to measure latency.
+    return tcp_ping(ip_address)
 
 def get_default_gateway():
     """Dynamically determine the LAN gateway IP address."""
@@ -164,10 +184,18 @@ def run_prober():
                             msg = f"⚠️ ANOMALY DETECTED: ISP latency spiked to {latency:.2f}ms! (Baseline: {moving_avg:.2f}ms)"
                             print(msg)
                             send_alert(msg)
+                
+                # Check for absolute failure.
+                # To prevent false positives on networks that block pings to the ISP Gateway node,
+                # we only trigger the critical offline alert if we ALSO cannot reach the external DNS.
                 elif latency == -1.0:
-                    msg = "🚨 CRITICAL: ISP Gateway is unreachable!"
-                    print(msg)
-                    send_alert(msg)
+                    dns_latency = measure_latency(EXTERNAL_DNS_IP)
+                    if dns_latency == -1.0:
+                        msg = "🚨 CRITICAL: ISP Gateway and Internet are unreachable!"
+                        print(msg)
+                        send_alert(msg)
+                    else:
+                        print(f"[{now}] ISP Gateway ping blocked, but Internet (DNS) is reachable. Suppressing false alert.")
 
         conn.commit()
         time.sleep(INTERVAL_SECONDS)

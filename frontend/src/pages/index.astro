@@ -66,6 +66,21 @@ const localStatus = evaluateStatus(seriesData.local);
 const ispStatus = evaluateStatus(seriesData.isp_gateway);
 const dnsStatus = evaluateStatus(seriesData.external_dns);
 
+// [UI INTELLIGENCE: Override False Positives]
+// If the broader internet (DNS) is reachable, then traffic IS successfully passing 
+// through the Local Router and ISP Gateway. If they are marked 'offline', it 
+// simply means they are configured to drop direct ICMP/TCP pings for security.
+if (dnsStatus.status === 'good' || dnsStatus.status === 'warn') {
+  if (localStatus.status === 'offline') {
+    localStatus.status = 'good';
+    localStatus.msg = 'Healthy (Ping Blocked)';
+  }
+  if (ispStatus.status === 'offline') {
+    ispStatus.status = 'good';
+    ispStatus.msg = 'Healthy (Ping Blocked)';
+  }
+}
+
 // Overall network interpretation
 let overallStateMsg = "All Systems Nominal. Your network is performing normally.";
 let overallStateColor = "#3fb950"; // Green

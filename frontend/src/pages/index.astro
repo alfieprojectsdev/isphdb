@@ -57,8 +57,11 @@ const evaluateStatus = (dataArr) => {
   const avg = recentData.reduce((a, b) => a + b, 0) / recentData.length;
   const latest = recentData[recentData.length - 1];
 
-  if (latest > 100 || avg > 80) return { status: 'bad', msg: 'High Latency' };
-  if (latest > 50 || avg > 40) return { status: 'warn', msg: 'Degraded' };
+  // The prober logs -1.0 for failure, but earlier in this file we mutate -1 to 500 for the chart.
+  if (latest >= 500) return { status: 'offline', msg: 'Disconnected' };
+
+  if (latest > 150 || avg > 100) return { status: 'bad', msg: 'High Latency' };
+  if (latest > 75 || avg > 60) return { status: 'warn', msg: 'Degraded' };
   return { status: 'good', msg: 'Healthy' };
 };
 

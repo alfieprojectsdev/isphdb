@@ -7,6 +7,7 @@ A local-first, lightweight time-series data collection and visualization system 
 ## Features
 - **Cross-Platform Backend:** Runs silently via native `subprocess` pings on macOS (`launchd`) and Linux (`systemd`).
 - **Dynamic Network Auto-Detection:** Automatically discovers your active Local Router and ISP Gateway using intelligent `netstat` and `traceroute` parsing—no hardcoding required. Move seamlessly between home, office, and coffee shop networks. 
+- **ICMP-Bypass (TCP Fallback):** Intelligently detects networks that aggressively block `ping` commands and dynamically fails over to raw TCP Socket connections (Port 53/80) to accurately measure gateway latency without triggering false offline alerts.
 - **"Don't Make Me Think" Dashboard:** Dynamic green/yellow/red status banners that interpret latency without requiring you to read the chart.
 - **Home Network Deployment:** Accessible to any browser on the LAN. 
 - **PWA Ready:** Install the dashboard directly to any iOS/Android home screen.

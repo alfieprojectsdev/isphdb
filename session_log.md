@@ -87,6 +87,11 @@ Here is a summary of what was accomplished:
     * Enhanced script to automatically detect host IP (`ipconfig` / `hostname -I`) and echo dashboard URLs (`http://<IP>:4321`) to the user upon restart.
     * Refactored script to automatically track down orphaned Astro UI servers and spawn a new Server-Side Rendered (SSR) Dashboard detached via `nohup`, ensuring both backend and frontend layers run simultaneously from one command.
 
+13. **ICMP-Bypass (TCP Fallback)**
+    * Discovered that enterprise/public networks often firewall and aggressively drop native `ping` (ICMP Echo Request) packets.
+    * Implemented an intelligent `tcp_ping()` fallback in `prober.py` that utilizes native python Sockets to connect to Port 53 (DNS) instead, successfully measuring router hop latencies without triggering the firewall.
+    * Added intelligence to `index.astro` to override false-positive "Offline" UI alerts if the backend detects that the internal router is dropping pings but the broader internet (DNS) is still reachable.
+
 ---
 
 ## Manual Effort Estimation

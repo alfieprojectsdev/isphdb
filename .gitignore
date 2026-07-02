@@ -1,1 +1,12 @@
 
+
+# Claude Code config (nested claude-config clone)
+.claude/
+
+# Runtime artifacts (SQLite DB + WAL/SHM sidecars, service logs)
+backend/network_metrics.db
+backend/network_metrics.db-shm
+backend/network_metrics.db-wal
+backend/prober.log
+frontend/dashboard.log
+frontend/dashboard.error.log

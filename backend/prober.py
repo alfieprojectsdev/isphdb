@@ -1,3 +1,4 @@
+import signal
 import sqlite3
 import sys
 import time
@@ -12,9 +13,14 @@ FALLBACK_ISP_GATEWAY_IP = "10.0.0.1"     # Standard default
 EXTERNAL_DNS_IP = "1.1.1.1"              # Cloudflare DNS
 DB_PATH = os.path.join(os.path.dirname(__file__), "network_metrics.db")
 INTERVAL_SECONDS = 30
+ANOMALY_WINDOW = 20
+PRUNE_CYCLES = 120
+RETENTION_DAYS = 30
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA busy_timeout=5000')
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS network_metrics (
@@ -31,9 +37,11 @@ def init_db():
 
 def send_alert(msg):
     if sys.platform == 'darwin':
-        os.system(f'osascript -e \'display notification "{msg}" with title "ISP Health Monitor"\'')
+        safe = msg.replace('"', '\\"')
+        script = f'display notification "{safe}" with title "ISP Health Monitor"'
+        subprocess.run(['osascript', '-e', script], check=False)
     else:
-        os.system(f'notify-send "ISP Health Monitor" "{msg}"')
+        subprocess.run(['notify-send', 'ISP Health Monitor', msg], check=False)
 
 def tcp_ping(ip_address, port=53, timeout=2.0):
     """Fallback latency measurement using TCP socket connection duration if ICMP is blocked."""
@@ -49,11 +57,18 @@ def tcp_ping(ip_address, port=53, timeout=2.0):
             return tcp_ping(ip_address, port=80, timeout=timeout)
         return -1.0
 
+def parse_ping_time(stdout):
+    """Return the round-trip time in ms parsed from ping stdout, or None if absent."""
+    for line in stdout.split('\n'):
+        if 'time=' in line:
+            try:
+                return float(line.split('time=')[1].split(' ')[0])
+            except (IndexError, ValueError):
+                return None
+    return None
+
 def measure_latency(ip_address):
     try:
-        # Use the OS native ping binary to avoid needing root (raw sockets).
-        # MacOS uses -t for timeout length in seconds.
-        # Linux uses -W for timeout length in seconds (do not use -t on Linux as it sets TTL).
         timeout_flag = '-t' if sys.platform == 'darwin' else '-W'
         result = subprocess.run(
             ['ping', '-c', '1', timeout_flag, '2', ip_address],
@@ -61,17 +76,11 @@ def measure_latency(ip_address):
             text=True
         )
         if result.returncode == 0:
-            # Parse latency, e.g. "time=1.062 ms"
-            for line in result.stdout.split('\n'):
-                if 'time=' in line:
-                    return float(line.split('time=')[1].split(' ')[0])
+            parsed = parse_ping_time(result.stdout)
+            if parsed is not None:
+                return parsed
     except Exception:
         pass
-        
-    # [DEVELOPER NOTE: ICMP Fallback]
-    # If the native ping fails entirely, it is likely because the current Wi-Fi network 
-    # (especially enterprise/public networks) explicitly blocks ICMP Echo Requests.
-    # We fallback to a TCP socket connection (TCP Ping) to measure latency.
     return tcp_ping(ip_address)
 
 def get_default_gateway():
@@ -111,7 +120,7 @@ def get_isp_gateway():
                     parts = stripped_line.split()
                     if len(parts) > 1 and parts[1] != '*':
                         ip = parts[1]
-                        
+
                         # [DEVELOPER NOTE: Bypassing Double NAT]
                         # Home setups often employ a "Double NAT" (e.g., a Google WiFi mesh router plugged into a Converge ISP modem).
                         # Both routers usually assign local 192.168.x.x addresses.
@@ -131,17 +140,52 @@ def get_isp_gateway():
                         ip = parts[1]
                     elif line.strip().startswith(tuple(str(i)+' ' for i in range(1, 6))) and parts[1] != '*': # traceroute format
                         ip = parts[1]
-                        
+
                     if ip and not ip.startswith('192.168.'):
                         return ip
     except Exception as e:
         print(f"Error auto-detecting ISP gateway: {e}")
     return FALLBACK_ISP_GATEWAY_IP
 
+def check_isp_anomaly(latency, isp_history):
+    """Append latency sample, trim history, and return an alert message if a spike is detected."""
+    if latency > 0:
+        isp_history.append(latency)
+        if len(isp_history) > ANOMALY_WINDOW:
+            isp_history.pop(0)
+
+        if len(isp_history) >= ANOMALY_WINDOW:
+            moving_avg = sum(isp_history) / len(isp_history)
+            # 2x of the post-append moving average (current sample included). Effective pre-spike ratio ~2.11x, so the AC's 3x spike scenario triggers. Do not raise to 3x here — that would test against the diluted average and cut sensitivity.
+            if latency > (moving_avg * 2) and latency > 50:
+                return f"⚠️ ANOMALY DETECTED: ISP latency spiked to {latency:.2f}ms! (Baseline: {moving_avg:.2f}ms)"
+    return None
+
+def prune_old_rows(cursor, conn):
+    """Delete rows older than RETENTION_DAYS to bound DB size."""
+    cursor.execute(
+        "DELETE FROM network_metrics WHERE timestamp < datetime('now', ?)",
+        (f'-{RETENTION_DAYS} days',)
+    )
+    conn.commit()
+
 def run_prober():
     conn = init_db()
     cursor = conn.cursor()
-    
+
+    _conn_ref = [conn]
+
+    def _shutdown(signum, frame):
+        try:
+            _conn_ref[0].commit()
+            _conn_ref[0].close()
+        except Exception:
+            pass
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
     # Auto-detect gateways inside the startup sequence
     local_gateway = get_default_gateway()
     isp_gateway = get_isp_gateway()
@@ -149,55 +193,59 @@ def run_prober():
     print(f"Starting prober. Logging to {DB_PATH}...")
     print(f"Auto-Detected Local Router: {local_gateway}")
     print(f"Auto-Detected ISP Gateway: {isp_gateway}")
-    
+
     targets = {
         'local': local_gateway,
         'isp_gateway': isp_gateway,
         'external_dns': EXTERNAL_DNS_IP
     }
-    
+
     isp_history = []
-    
+    cycle = 0
+
     while True:
-        now = datetime.now(timezone.utc).isoformat()
-        for node_name, ip in targets.items():
-            latency = measure_latency(ip)
-            
-            cursor.execute(
-                "INSERT INTO network_metrics (timestamp, target_node, latency_ms) VALUES (?, ?, ?)",
-                (now, node_name, latency)
-            )
-            print(f"[{now}] {node_name} ({ip}): {latency:.2f} ms")
-            
-            # Anomaly Detection for ISP latency
-            if node_name == 'isp_gateway':
-                if latency > 0:
-                    isp_history.append(latency)
-                    if len(isp_history) > 20: # Keep the last 10 minutes (20 * 30s)
-                        isp_history.pop(0)
-                        
-                        # Calculate moving average
-                        moving_avg = sum(isp_history) / len(isp_history)
-                        
-                        # If current latency is double the moving average and > 50ms, trigger alert
-                        if latency > (moving_avg * 2) and latency > 50:
-                            msg = f"⚠️ ANOMALY DETECTED: ISP latency spiked to {latency:.2f}ms! (Baseline: {moving_avg:.2f}ms)"
-                            print(msg)
-                            send_alert(msg)
-                
-                # Check for absolute failure.
-                # To prevent false positives on networks that block pings to the ISP Gateway node,
-                # we only trigger the critical offline alert if we ALSO cannot reach the external DNS.
-                elif latency == -1.0:
-                    dns_latency = measure_latency(EXTERNAL_DNS_IP)
-                    if dns_latency == -1.0:
-                        msg = "🚨 CRITICAL: ISP Gateway and Internet are unreachable!"
+        # SQLite-canonical UTC format ('YYYY-MM-DD HH:MM:SS') so datetime() comparisons
+        # (retention prune, frontend 3-hour window) work. isoformat()'s 'T'/'+00:00'
+        # sorts lexicographically wrong against datetime('now') and silently breaks them.
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            for node_name, ip in targets.items():
+                latency = measure_latency(ip)
+
+                cursor.execute(
+                    "INSERT INTO network_metrics (timestamp, target_node, latency_ms) VALUES (?, ?, ?)",
+                    (now, node_name, latency)
+                )
+                print(f"[{now}] {node_name} ({ip}): {latency:.2f} ms")
+
+                if node_name == 'isp_gateway':
+                    msg = check_isp_anomaly(latency, isp_history)
+                    if msg:
                         print(msg)
                         send_alert(msg)
-                    else:
-                        print(f"[{now}] ISP Gateway ping blocked, but Internet (DNS) is reachable. Suppressing false alert.")
+                    elif latency == -1.0:
+                        # Check for absolute failure.
+                        # To prevent false positives on networks that block pings to the ISP Gateway node,
+                        # we only trigger the critical offline alert if we ALSO cannot reach the external DNS.
+                        dns_latency = measure_latency(EXTERNAL_DNS_IP)
+                        if dns_latency == -1.0:
+                            msg = "🚨 CRITICAL: ISP Gateway and Internet are unreachable!"
+                            print(msg)
+                            send_alert(msg)
+                        else:
+                            print(f"[{now}] ISP Gateway ping blocked, but Internet (DNS) is reachable. Suppressing false alert.")
 
-        conn.commit()
+            conn.commit()
+        except sqlite3.OperationalError as e:
+            print(f"[ERROR] DB write failed: {e}")
+
+        cycle += 1
+        if cycle % PRUNE_CYCLES == 0:
+            try:
+                prune_old_rows(cursor, conn)
+            except sqlite3.OperationalError as e:
+                print(f"[ERROR] Prune failed: {e}")
+
         time.sleep(INTERVAL_SECONDS)
 
 if __name__ == "__main__":

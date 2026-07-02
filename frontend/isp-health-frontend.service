@@ -10,6 +10,8 @@ Restart=always
 RestartSec=5
 Environment=HOST=0.0.0.0
 Environment=PORT=4321
+StandardOutput=append:/home/finch/repos/isphdb/frontend/dashboard.log
+StandardError=append:/home/finch/repos/isphdb/frontend/dashboard.error.log
 
 [Install]
 WantedBy=default.target

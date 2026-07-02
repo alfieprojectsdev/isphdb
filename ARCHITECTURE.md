@@ -11,7 +11,7 @@ The system is broken into two decoupled components: a Python-based background da
 **File location:** `backend/prober.py`
 
 ### Mechanism
-The prober is an infinite loop script that wakes up every 30 seconds (`INTERVAL_SECONDS`) to perform ICMP pings against three crucial network layers:
+The prober is an infinite loop script that wakes up every 30 seconds (`INTERVAL_SECONDS`) to perform ICMP pings (with TCP socket fallback when ICMP is blocked) against three crucial network layers:
 1. **Local Router (`Auto-detected`)**: Indicates Wi-Fi/LAN health.
 2. **ISP Gateway (`Auto-detected`)**: Indicates the physical line connecting your home to the neighborhood node.
 3. **External DNS (`1.1.1.1`)**: Indicates broader internet routing health beyond your ISP.
@@ -28,8 +28,10 @@ It dynamically inspects `sys.platform` to format commands appropriately:
 - **macOS (`darwin`)**: Executes `ping -c 1 -t 2 <ip>`
 - **Linux**: Executes `ping -c 1 -W 2 <ip>`
 
+When ICMP is blocked (common on enterprise and public networks), the prober falls back to a TCP socket connect on port 53 (DNS) then port 80 (HTTP). This prevents false offline alerts on ICMP-filtered networks.
+
 ### Telemetry Storage
-All results are appended to a local SQLite database (`backend/network_metrics.db`). The schema consists of a single `network_metrics` table with an indexed `timestamp` column for high-speed time-series retrieval. Total disconnections are stored with a latency of `-1.0` ms.
+All results are appended to a local SQLite database (`backend/network_metrics.db`). The schema consists of a single `network_metrics` table with an indexed `timestamp` column for high-speed time-series retrieval. Total disconnections are stored with a latency of `-1.0` ms. Rows older than 30 days are pruned periodically by the prober to keep the working set bounded. The database runs in WAL mode so the prober (writer) and the SSR dashboard (reader) operate concurrently without SQLITE_BUSY errors.
 
 ### Anomaly Detection & Alerting
 The prober retains a rolling history of the last 10 minutes (20 data points) for the ISP Gateway. 
@@ -65,5 +67,14 @@ To survive reboots and run transparently, the stack utilizes native OS service m
 ### macOS (`launchd`)
 Provided in `backend/com.user.isphealth.plist`. This XML file instructs the Apple `launchd` service to execute the prober via `uv run` on system load, persisting the process and dumping standard output/errors into `/tmp/` logs.
 
-### Linux (`systemd`)
-Provided in `backend/isp-health.service`. This INI-style configuration file serves a similar role for Linux distributions, allowing administrators to use `systemctl enable --now isp-health.service` to bind the prober to the network target lifecycle.
+### Linux (`systemd --user`)
+Provided in `backend/isp-health.service` and `frontend/isp-health-frontend.service`. Both are user-level units (`WantedBy=default.target`) that run without root privileges. Install and start them with:
+
+```bash
+cp backend/isp-health.service ~/.config/systemd/user/
+cp frontend/isp-health-frontend.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now isp-health.service
+systemctl --user enable --now isp-health-frontend.service
+loginctl enable-linger $USER   # persist services past logout
+```

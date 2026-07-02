@@ -47,7 +47,7 @@ You can still manage the background services manually if you prefer:
 
 **1. The Prober (Backend)**
 * macOS: `launchctl load -w backend/com.user.isphealth.plist`
-* Linux: `sudo systemctl enable --now isp-health.service`
+* Linux: `systemctl --user enable --now isp-health.service`
 * Interactive: `cd backend && uv run prober.py`
 
 **2. The Dashboard (Frontend)**
@@ -64,4 +64,5 @@ The `network_metrics` table has the following schema:
 
 ## Future Improvements
 
-* Desktop OS notifications are currently implemented via AppleScript (`osascript`) for macOS when the ISP latency exceeds baseline parameters by >200%.
+* Data retention: rows older than 30 days are pruned automatically by the prober on an hourly cadence.
+* The database runs in WAL mode for concurrent reader/writer access between the prober and the dashboard.

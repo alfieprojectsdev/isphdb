@@ -10,17 +10,38 @@ cd "$(dirname "$0")"
 echo "=== ISP Health Daemon Manager ==="
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    echo "[OS Detected] Linux (systemd)"
-    echo "Stopping existing systemd service..."
-    sudo systemctl stop isp-health.service || true
-    
-    echo "Copying latest service template to systemd..."
-    sudo cp backend/isp-health.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    
-    echo "Starting systemd service..."
-    sudo systemctl enable --now isp-health.service
-    echo "✅ Linux Daemon is now running!"
+    echo "[OS Detected] Linux (systemd --user)"
+    REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+    UV_BIN="$(command -v uv || echo "$HOME/.local/bin/uv")"
+
+    echo "Building frontend production bundle..."
+    ( cd frontend && npm install --no-audit --no-fund && npm run build )
+    if [ ! -f frontend/dist/server/entry.mjs ]; then
+        echo "❌ Frontend build failed (frontend/dist/server/entry.mjs missing). Aborting before touching services." >&2
+        exit 1
+    fi
+
+    echo "Stopping existing systemd user services..."
+    systemctl --user stop isp-health.service 2>/dev/null || true
+    systemctl --user stop isp-health-frontend.service 2>/dev/null || true
+
+    echo "Installing unit files to user systemd directory..."
+    mkdir -p ~/.config/systemd/user
+    cp backend/isp-health.service ~/.config/systemd/user/
+    cp frontend/isp-health-frontend.service ~/.config/systemd/user/
+
+    sed -i "s|/home/finch/repos/isphdb|$REPO_ROOT|g" ~/.config/systemd/user/isp-health.service ~/.config/systemd/user/isp-health-frontend.service
+    if grep -q '/home/finch/.local/bin/uv' ~/.config/systemd/user/isp-health.service; then
+        sed -i "s|/home/finch/.local/bin/uv|$UV_BIN|g" ~/.config/systemd/user/isp-health.service
+    fi
+
+    systemctl --user daemon-reload
+
+    echo "Starting systemd user services..."
+    systemctl --user enable --now isp-health.service
+    systemctl --user enable --now isp-health-frontend.service
+    echo "✅ Linux services are now running!"
+    echo "Note: Run 'loginctl enable-linger $USER' to persist services past logout."
 
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     echo "[OS Detected] macOS (launchd)"
@@ -41,16 +62,18 @@ else
     exit 1
 fi
 
-echo ""
-echo "=== Starting Astro Dashboard (Frontend) ==="
-echo "Stopping any existing Astro dev servers..."
-pkill -f "astro dev" || true
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo ""
+    echo "=== Starting Astro Dashboard (Frontend) ==="
+    echo "Stopping any existing Astro dev servers..."
+    pkill -f "astro dev" || true
 
-echo "Starting Astro dev server in the background..."
-cd frontend
-nohup npm run dev -- --host > /dev/null 2>&1 &
-cd ..
-echo "✅ Frontend server is now running!"
+    echo "Starting Astro dev server in the background..."
+    cd frontend
+    nohup npm run dev -- --host > /dev/null 2>&1 &
+    cd ..
+    echo "✅ Frontend server is now running!"
+fi
 
 echo ""
 echo "Note: The Python prober inherently auto-detects your active Local Router and ISP Gateway on startup."

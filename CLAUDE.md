@@ -62,14 +62,17 @@ Two fully decoupled components share a single SQLite database file:
 - The frontend reads the DB at SSR time on each page request — there is no API layer or WebSocket.
 - Failed pings are stored as `-1.0` ms and mapped to `500` in the frontend for visual display as red spikes.
 - Status classification (Healthy/Degraded/High Latency) is computed from the last 20 data points (~10 minutes) on the frontend.
+- Rows older than 30 days are pruned periodically by the prober; the DB runs in WAL mode for concurrent reader/writer access.
 - ECharts is loaded from CDN (`echarts@5.5.0`) in the HTML head, not bundled.
 - The DB path can be overridden with the `DB_PATH` environment variable (defaults to `../backend/network_metrics.db` relative to `process.cwd()`).
 
 ### Network Targets
-| Key | IP | Meaning |
-|-----|----|---------|
-| `local` | `192.168.1.1` | LAN/Wi-Fi health |
-| `isp_gateway` | `10.56.0.1` | Physical ISP line (hop 3, bypasses Double NAT) |
+Targets are auto-detected at startup; the values below are examples only.
+
+| Key | Example IP | Meaning |
+|-----|----|------|
+| `local` | `192.168.1.1` | LAN/Wi-Fi health (default gateway) |
+| `isp_gateway` | auto-detected | Physical ISP line (first non-192.168.* traceroute hop) |
 | `external_dns` | `1.1.1.1` | Broader internet routing |
 
 ### DB Schema

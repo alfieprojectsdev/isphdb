@@ -5,6 +5,15 @@ export const GOOD_COLOR = '#3fb950';
 export const WARN_COLOR = '#d29922';
 export const BAD_COLOR = '#f85149';
 
+// Network-reach tier colors for the route map. Reuse the chart's categorical series
+// palette so a layer reads the same in both views: ISP = purple, external = teal.
+export const TIER_COLORS = { isp: '#a371f7', external: '#39c5cf' };
+
+/** Color for a hop's network-reach tier; neutral grey for unknown/missing tiers. */
+export function tierColor(tier) {
+  return TIER_COLORS[tier] || '#8b949e';
+}
+
 function ipToInt(ip) {
   if (typeof ip !== 'string') return null;
   const parts = ip.split('.');

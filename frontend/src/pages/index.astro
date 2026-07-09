@@ -2,7 +2,7 @@
 // src/pages/index.astro
 import Database from 'better-sqlite3';
 import { evaluateStatus, applyPingBlockedOverride } from '../lib/status.mjs';
-import { lookupHopGeo, latencyToColor } from '../lib/geo.mjs';
+import { lookupHopGeo, tierColor } from '../lib/geo.mjs';
 import hopGeoTable from '../lib/hop-geo.json';
 import path from 'path';
 
@@ -55,19 +55,38 @@ rawData.forEach(row => {
   }
 });
 
-// Join each captured hop to its geo location; drop unmappable/unknown hops. Points carry
-// [lon, lat, latency] plus a precomputed heat color for the map series.
+// Join each captured hop to its geo location; drop unmappable/unknown hops. The map is a
+// network-reach view: hops and path segments are colored by tier (ISP vs external), not by
+// latency (which the chart already covers and which is undifferentiated when every hop sits
+// in the same metro). Each point carries [lon, lat, latency] for the tooltip.
 const hopPoints = [];
 for (const row of hopRows) {
   const geo = lookupHopGeo(row.hop_ip, hopGeoTable);
   if (!geo) continue;
+  const tier = geo.tier || 'external';
   hopPoints.push({
     name: geo.label,
     ip: row.hop_ip,
     value: [geo.lon, geo.lat, row.latency_ms],
-    color: latencyToColor(row.latency_ms),
+    tier,
+    tierColor: tierColor(tier),
   });
 }
+
+// The ISP -> external handoff: the first external-tier hop that follows an ISP-tier hop.
+// This is the geographic boundary between "inside your ISP's network" and the transit/CDN
+// path beyond it. null when the capture doesn't span both tiers.
+let boundaryPoint = null;
+for (let i = 1; i < hopPoints.length; i++) {
+  if (hopPoints[i - 1].tier === 'isp' && hopPoints[i].tier === 'external') {
+    boundaryPoint = { coord: [hopPoints[i].value[0], hopPoints[i].value[1]] };
+    break;
+  }
+}
+
+// Whether any monitored target currently shows the failure sentinel (500). Drives the red
+// "offline" marker line on the chart; only shown when relevant so it never blows up the axis.
+const hasFailure = Object.values(seriesData).some(arr => arr.some(pt => pt[1] >= 500));
 
 const localStatus = evaluateStatus(seriesData.local);
 const ispStatus = evaluateStatus(seriesData.isp_gateway);
@@ -258,7 +277,11 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
       .geo-sub {
         font-size: 0.875rem;
         color: #8b949e;
-        margin: 0 0 1rem;
+        margin: 0 0 0.75rem;
+      }
+      .geo-legend {
+        margin-bottom: 1rem;
+        font-size: 0.8rem;
       }
       .error-state {
         text-align: center;
@@ -324,7 +347,11 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
           {hopPoints.length > 0 && (
             <div id="geo-container">
               <div class="geo-title">Route Geography</div>
-              <div class="geo-sub">Latest traceroute to 1.1.1.1 — public hops, colored by latency.</div>
+              <div class="geo-sub">Public path to 1.1.1.1 by network layer. Your local router &amp; ISP gateway are private (pre-map); the map begins at the ISP core.</div>
+              <div class="legend-strip geo-legend">
+                <span class="legend-chip"><span class="legend-dot" style="background-color: #a371f7"></span>ISP reach (Converge)</span>
+                <span class="legend-chip"><span class="legend-dot" style="background-color: #39c5cf"></span>External (Cloudflare → DNS)</span>
+              </div>
               <div id="geo-chart"></div>
             </div>
           )}
@@ -333,7 +360,7 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
     </div>
 
     {rawData.length > 0 && (
-      <script define:vars={{ seriesData }}>
+      <script define:vars={{ seriesData, hasFailure }}>
         const chartDom = document.getElementById('chart');
         if (chartDom) {
           const myChart = echarts.init(chartDom, 'dark', { renderer: 'canvas' });
@@ -363,22 +390,36 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
               axisLine: { lineStyle: { color: '#30363d' } },
               splitLine: { show: false },
             },
-            yAxis: { 
-              type: 'value', 
+            yAxis: {
+              type: 'value',
               name: 'Latency (ms)',
               nameTextStyle: { color: '#8b949e' },
               axisLine: { show: false },
               splitLine: { lineStyle: { color: '#30363d', type: 'dashed' } },
+              // Pin the top to the sentinel only when a failure is present, so the red
+              // marker line sits at the ceiling. Otherwise let the axis auto-fit the real
+              // latency range (a 500 line would otherwise flatten normal variation).
+              max: hasFailure ? 520 : null,
             },
             series: [
-              { 
-                name: 'Local Router', 
-                type: 'line', 
-                data: seriesData.local, 
-                smooth: 0.3, 
+              {
+                name: 'Local Router',
+                type: 'line',
+                data: seriesData.local,
+                smooth: 0.3,
                 showSymbol: false,
                 color: '#58a6ff', // Categorical (identity, not status): blue
                 lineStyle: { width: 3 },
+                // The failure sentinel: -1.0 pings map to 500. Draw a single red reference
+                // line at that level (on this series only; it spans the whole plot) so
+                // dropped-packet spikes are unmistakable. Hidden when nothing has failed.
+                markLine: hasFailure ? {
+                  silent: true,
+                  symbol: 'none',
+                  data: [{ yAxis: 500 }],
+                  lineStyle: { color: '#f85149', type: 'dashed', width: 1.5 },
+                  label: { formatter: 'Offline (packet loss)', color: '#f85149', position: 'insideEndTop' }
+                } : undefined,
                 areaStyle: {
                   color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                     { offset: 0, color: 'rgba(88, 166, 255, 0.35)' },
@@ -432,7 +473,7 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
     )}
 
     {hopPoints.length > 0 && (
-      <script define:vars={{ hopPoints }}>
+      <script define:vars={{ hopPoints, boundaryPoint }}>
         (async () => {
           const el = document.getElementById('geo-chart');
           if (!el || !hopPoints.length) return;
@@ -448,15 +489,54 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
           echarts.registerMap('philippines', geojson);
 
           const map = echarts.init(el, 'dark', { renderer: 'canvas' });
+
+          // Hops colored by network-reach tier (ISP purple / external teal).
           const scatter = hopPoints.map(h => ({
             name: h.name,
             value: h.value,
-            itemStyle: { color: h.color }
+            tier: h.tier,
+            ip: h.ip,
+            itemStyle: { color: h.tierColor }
           }));
-          const pathCoords = hopPoints.map(h => [h.value[0], h.value[1]]);
+
+          // Path split into segments; each segment takes the tier color of the hop it
+          // arrives at, so the color visibly changes at the ISP -> external boundary.
           const lines = [];
-          for (let i = 1; i < pathCoords.length; i++) {
-            lines.push({ coords: [pathCoords[i - 1], pathCoords[i]] });
+          for (let i = 1; i < hopPoints.length; i++) {
+            lines.push({
+              coords: [
+                [hopPoints[i - 1].value[0], hopPoints[i - 1].value[1]],
+                [hopPoints[i].value[0], hopPoints[i].value[1]]
+              ],
+              lineStyle: { color: hopPoints[i].tierColor }
+            });
+          }
+
+          const hopSeries = {
+            name: 'Hops',
+            type: 'effectScatter',
+            coordinateSystem: 'geo',
+            data: scatter,
+            symbolSize: 12,
+            rippleEffect: { scale: 2.5 },
+            // Hops cluster tightly (all Metro Manila here), so always-on labels overlap.
+            // Show the label only on hover; the tooltip carries IP, tier and latency.
+            label: { show: false },
+            emphasis: { label: { show: true, formatter: '{b}', position: 'right', color: '#c9d1d9', fontSize: 11 } },
+            z: 2
+          };
+
+          // Mark the ISP -> external handoff so the boundary reads even when hops overlap.
+          if (boundaryPoint) {
+            hopSeries.markPoint = {
+              symbol: 'pin',
+              symbolSize: 42,
+              data: [{
+                coord: boundaryPoint.coord,
+                itemStyle: { color: '#f0f6fc' },
+                label: { show: true, formatter: 'ISP → External', position: 'top', color: '#c9d1d9', fontSize: 10 }
+              }]
+            };
           }
 
           map.setOption({
@@ -469,7 +549,8 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
               formatter: (p) => {
                 if (p.seriesType !== 'effectScatter') return '';
                 const lm = p.value[2];
-                return `${p.name}<br/>${lm < 0 ? 'unreachable' : lm.toFixed(1) + ' ms'}`;
+                const tier = p.data.tier === 'isp' ? 'ISP network' : 'External / backbone';
+                return `${p.name}<br/>${p.data.ip} · ${tier}<br/>${lm < 0 ? 'unreachable' : lm.toFixed(1) + ' ms'}`;
               }
             },
             geo: {
@@ -484,22 +565,10 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
                 type: 'lines',
                 coordinateSystem: 'geo',
                 data: lines,
-                lineStyle: { color: '#58a6ff', width: 1.5, opacity: 0.6, curveness: 0.2 },
+                lineStyle: { width: 2, opacity: 0.7, curveness: 0.2 },
                 z: 1
               },
-              {
-                name: 'Hops',
-                type: 'effectScatter',
-                coordinateSystem: 'geo',
-                data: scatter,
-                symbolSize: 12,
-                rippleEffect: { scale: 2.5 },
-                // Hops cluster tightly (all Metro Manila here), so always-on labels overlap.
-                // Show the label only on hover; the tooltip carries IP + latency.
-                label: { show: false },
-                emphasis: { label: { show: true, formatter: '{b}', position: 'right', color: '#c9d1d9', fontSize: 11 } },
-                z: 2
-              }
+              hopSeries
             ]
           });
 

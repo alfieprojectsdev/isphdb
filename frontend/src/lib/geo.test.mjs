@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lookupHopGeo, latencyToColor, GOOD_COLOR, WARN_COLOR, BAD_COLOR } from './geo.mjs';
+import { lookupHopGeo, latencyToColor, tierColor, GOOD_COLOR, WARN_COLOR, BAD_COLOR, TIER_COLORS } from './geo.mjs';
 
 const TABLE = {
   _comment: 'ignored',
@@ -53,4 +53,16 @@ test('latencyToColor: sentinel latency -> offline red', () => {
   assert.equal(latencyToColor(-1), BAD_COLOR);
   assert.equal(latencyToColor(500), BAD_COLOR);
   assert.equal(latencyToColor(null), BAD_COLOR);
+});
+
+// tierColor
+
+test('tierColor: known tiers map to the palette', () => {
+  assert.equal(tierColor('isp'), TIER_COLORS.isp);
+  assert.equal(tierColor('external'), TIER_COLORS.external);
+});
+
+test('tierColor: unknown/missing tier -> neutral grey', () => {
+  assert.equal(tierColor('nope'), '#8b949e');
+  assert.equal(tierColor(undefined), '#8b949e');
 });

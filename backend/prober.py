@@ -16,6 +16,10 @@ INTERVAL_SECONDS = 30
 ANOMALY_WINDOW = 20
 PRUNE_CYCLES = 120
 RETENTION_DAYS = 30
+# Consecutive cycles where BOTH the ISP gateway and external DNS must fail before
+# firing the critical "no internet" alert. Debounces cold-start / transient single
+# misses (interface just up, first ICMP dropped) that are not real outages.
+CRITICAL_FAIL_STREAK = 3
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -108,6 +112,15 @@ def get_default_gateway():
         print(f"Error auto-detecting default gateway: {e}")
     return FALLBACK_LOCAL_ROUTER_IP
 
+def is_valid_ipv4(token):
+    """True only for a dotted-quad IPv4 literal. Rejects tracepath noise like
+    'send' (from 'send failed'), 'no' (from 'no reply'), 'Too', hostnames, etc."""
+    try:
+        socket.inet_aton(token)
+        return token.count('.') == 3
+    except (OSError, TypeError):
+        return False
+
 def get_isp_gateway():
     """Dynamically trace route to DNS and extract the first hop outside the local network."""
     try:
@@ -118,7 +131,7 @@ def get_isp_gateway():
                 stripped_line = line.strip()
                 if len(stripped_line) > 0 and stripped_line[0].isdigit(): # Hit a hop line
                     parts = stripped_line.split()
-                    if len(parts) > 1 and parts[1] != '*':
+                    if len(parts) > 1 and is_valid_ipv4(parts[1]):
                         ip = parts[1]
 
                         # [DEVELOPER NOTE: Bypassing Double NAT]
@@ -136,9 +149,9 @@ def get_isp_gateway():
                 parts = line.split()
                 if len(parts) > 1:
                     ip = None
-                    if line.strip().startswith(tuple(str(i)+':' for i in range(1, 6))) and parts[1] != 'no': # tracepath format
+                    if line.strip().startswith(tuple(str(i)+':' for i in range(1, 6))) and is_valid_ipv4(parts[1]): # tracepath format
                         ip = parts[1]
-                    elif line.strip().startswith(tuple(str(i)+' ' for i in range(1, 6))) and parts[1] != '*': # traceroute format
+                    elif line.strip().startswith(tuple(str(i)+' ' for i in range(1, 6))) and is_valid_ipv4(parts[1]): # traceroute format
                         ip = parts[1]
 
                     if ip and not ip.startswith('192.168.'):
@@ -202,6 +215,8 @@ def run_prober():
 
     isp_history = []
     cycle = 0
+    dns_down_streak = 0
+    critical_alerted = False
 
     while True:
         # SQLite-canonical UTC format ('YYYY-MM-DD HH:MM:SS') so datetime() comparisons
@@ -223,16 +238,29 @@ def run_prober():
                     if msg:
                         print(msg)
                         send_alert(msg)
-                    elif latency == -1.0:
-                        # Check for absolute failure.
-                        # To prevent false positives on networks that block pings to the ISP Gateway node,
-                        # we only trigger the critical offline alert if we ALSO cannot reach the external DNS.
+
+                    if latency != -1.0:
+                        # ISP gateway reachable -> internet is up; clear any pending outage state.
+                        dns_down_streak = 0
+                        critical_alerted = False
+                    else:
+                        # ISP gateway ping failed. To avoid false positives on networks that block
+                        # pings to the gateway, only treat this as an outage if external DNS is ALSO
+                        # unreachable, and only after CRITICAL_FAIL_STREAK consecutive such cycles so a
+                        # cold-start / transient single miss never fires the scary alert.
                         dns_latency = measure_latency(EXTERNAL_DNS_IP)
                         if dns_latency == -1.0:
-                            msg = "🚨 CRITICAL: ISP Gateway and Internet are unreachable!"
-                            print(msg)
-                            send_alert(msg)
+                            dns_down_streak += 1
+                            if dns_down_streak >= CRITICAL_FAIL_STREAK and not critical_alerted:
+                                msg = "🚨 CRITICAL: ISP Gateway and Internet are unreachable!"
+                                print(msg)
+                                send_alert(msg)
+                                critical_alerted = True
+                            else:
+                                print(f"[{now}] ISP+DNS unreachable ({dns_down_streak}/{CRITICAL_FAIL_STREAK}); deferring critical alert.")
                         else:
+                            dns_down_streak = 0
+                            critical_alerted = False
                             print(f"[{now}] ISP Gateway ping blocked, but Internet (DNS) is reachable. Suppressing false alert.")
 
             conn.commit()

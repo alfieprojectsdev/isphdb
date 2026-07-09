@@ -162,37 +162,26 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
         70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(88, 166, 255, 0); }
         100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(88, 166, 255, 0); }
       }
-      .legend-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 1rem;
-        margin-bottom: 2rem;
-      }
-      .legend-item {
-        background: var(--card-bg);
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        padding: 1rem;
+      .legend-strip {
         display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.5rem;
+        margin-bottom: 1.5rem;
+        padding: 0 0.25rem;
       }
-      .legend-header {
-        display: flex;
+      .legend-chip {
+        display: inline-flex;
         align-items: center;
-        gap: 0.5rem;
-        font-weight: 600;
-        color: #f0f6fc;
+        gap: 0.45rem;
+        font-size: 0.85rem;
+        color: #8b949e;
+        cursor: help;
       }
       .legend-dot {
-        width: 12px;
-        height: 12px;
+        width: 11px;
+        height: 11px;
         border-radius: 50%;
-      }
-      .legend-desc {
-        font-size: 0.875rem;
-        color: #8b949e;
-        line-height: 1.4;
+        flex-shrink: 0;
       }
       .summary-banner {
         background: var(--card-bg);
@@ -231,24 +220,34 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
         height: 10px;
         border-radius: 50%;
       }
-      #chart-container { 
-        background: var(--card-bg); 
-        border-radius: 12px; 
-        padding: 1.5rem; 
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        border: 1px solid #30363d;
+      /* Chart + map sit in one row, both above the fold on desktop. Falls back to a
+         single column (stacked) when only the chart exists or on narrow screens. */
+      .viz-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+        align-items: stretch;
       }
-      #chart {
-        width: 100%;
-        height: 600px;
+      .viz-grid.has-map {
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
       }
-      #geo-container {
+      @media (max-width: 900px) {
+        .viz-grid.has-map { grid-template-columns: 1fr; }
+      }
+      #chart-container, #geo-container {
         background: var(--card-bg);
         border-radius: 12px;
         padding: 1.5rem;
-        margin-top: 2rem;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         border: 1px solid #30363d;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      #chart, #geo-chart {
+        width: 100%;
+        flex: 1;
+        min-height: 440px;
       }
       .geo-title {
         font-size: 1.1rem;
@@ -260,10 +259,6 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
         font-size: 0.875rem;
         color: #8b949e;
         margin: 0 0 1rem;
-      }
-      #geo-chart {
-        width: 100%;
-        height: 500px;
       }
       .error-state {
         text-align: center;
@@ -304,47 +299,35 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
         </div>
       )}
       
-      <div class="legend-container">
-        <div class="legend-item">
-          <div class="legend-header">
-            <div class="legend-dot" style="background-color: #3fb950"></div>
-            Local Router (<span style="color: #3fb950">Green</span>)
-          </div>
-          <div class="legend-desc">Your local home network Wi-Fi or LAN connection. Latency here should consistently be less than 5ms.</div>
-        </div>
-        <div class="legend-item">
-          <div class="legend-header">
-            <div class="legend-dot" style="background-color: #d29922"></div>
-            ISP Gateway (<span style="color: #d29922">Yellow</span>)
-          </div>
-          <div class="legend-desc">The first hop connecting your home to your Internet Service Provider. Spikes here indicate neighborhood cable/fiber congestion.</div>
-        </div>
-        <div class="legend-item">
-          <div class="legend-header">
-            <div class="legend-dot" style="background-color: #f85149"></div>
-            External DNS (<span style="color: #f85149">Red</span>)
-          </div>
-          <div class="legend-desc">Wider internet connectivity (1.1.1.1). If this spikes while your ISP Gateway stays low, the broader internet routing backbone is experiencing issues.</div>
-        </div>
+      <div class="legend-strip">
+        <span class="legend-chip" title="Your local home network Wi-Fi or LAN connection. Latency here should consistently be under 5ms.">
+          <span class="legend-dot" style="background-color: #58a6ff"></span>Local Router
+        </span>
+        <span class="legend-chip" title="The first hop connecting your home to your ISP. Spikes here indicate neighborhood cable/fiber congestion.">
+          <span class="legend-dot" style="background-color: #a371f7"></span>ISP Gateway
+        </span>
+        <span class="legend-chip" title="Wider internet connectivity (1.1.1.1). If this spikes while the ISP Gateway stays low, the broader internet backbone is struggling.">
+          <span class="legend-dot" style="background-color: #39c5cf"></span>External DNS
+        </span>
       </div>
 
-      
       {rawData.length === 0 ? (
         <div class="error-state">
           <h2>No telemetry data found.</h2>
           <p>Ensure the background Python prober daemon is running and has populated the database.</p>
         </div>
       ) : (
-        <div id="chart-container">
-          <div id="chart"></div>
-        </div>
-      )}
-
-      {hopPoints.length > 0 && (
-        <div id="geo-container">
-          <div class="geo-title">Route Geography</div>
-          <div class="geo-sub">Latest traceroute to 1.1.1.1 — geolocatable public hops, colored by latency.</div>
-          <div id="geo-chart"></div>
+        <div class={`viz-grid ${hopPoints.length > 0 ? 'has-map' : ''}`}>
+          <div id="chart-container">
+            <div id="chart"></div>
+          </div>
+          {hopPoints.length > 0 && (
+            <div id="geo-container">
+              <div class="geo-title">Route Geography</div>
+              <div class="geo-sub">Latest traceroute to 1.1.1.1 — public hops, colored by latency.</div>
+              <div id="geo-chart"></div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -394,12 +377,12 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
                 data: seriesData.local, 
                 smooth: 0.3, 
                 showSymbol: false,
-                color: '#3fb950', // Success green
+                color: '#58a6ff', // Categorical (identity, not status): blue
                 lineStyle: { width: 3 },
                 areaStyle: {
                   color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: 'rgba(63, 185, 80, 0.4)' },
-                    { offset: 1, color: 'rgba(63, 185, 80, 0.0)' }
+                    { offset: 0, color: 'rgba(88, 166, 255, 0.35)' },
+                    { offset: 1, color: 'rgba(88, 166, 255, 0.0)' }
                   ])
                 }
               },
@@ -409,12 +392,12 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
                 data: seriesData.isp_gateway, 
                 smooth: 0.3, 
                 showSymbol: false,
-                color: '#d29922', // Warning yellow
+                color: '#a371f7', // Categorical (identity, not status): purple
                 lineStyle: { width: 3 },
                 areaStyle: {
                   color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: 'rgba(210, 153, 34, 0.4)' },
-                    { offset: 1, color: 'rgba(210, 153, 34, 0.0)' }
+                    { offset: 0, color: 'rgba(163, 113, 247, 0.35)' },
+                    { offset: 1, color: 'rgba(163, 113, 247, 0.0)' }
                   ])
                 }
               },
@@ -424,12 +407,12 @@ if (localStatus.status === 'bad' || localStatus.status === 'offline') {
                 data: seriesData.external_dns, 
                 smooth: 0.3, 
                 showSymbol: false,
-                color: '#f85149', // Danger red
+                color: '#39c5cf', // Categorical (identity, not status): teal
                 lineStyle: { width: 3 },
                 areaStyle: {
                   color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: 'rgba(248, 81, 73, 0.4)' },
-                    { offset: 1, color: 'rgba(248, 81, 73, 0.0)' }
+                    { offset: 0, color: 'rgba(57, 197, 207, 0.35)' },
+                    { offset: 1, color: 'rgba(57, 197, 207, 0.0)' }
                   ])
                 }
               }

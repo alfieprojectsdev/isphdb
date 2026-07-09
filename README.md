@@ -4,14 +4,17 @@ A local-first, lightweight time-series data collection and visualization system 
 
 📖 **[Read the Full System Architecture Explainer](ARCHITECTURE.md)**
 
+![ISP Health Dashboard — latency chart, per-layer status rail, and route ladder](docs/dashboard.png)
+
 ## Features
 - **Cross-Platform Backend:** Runs silently via native `subprocess` pings on macOS (`launchd`) and Linux (`systemd`).
 - **Dynamic Network Auto-Detection:** Automatically discovers your active Local Router and ISP Gateway using intelligent `netstat` and `traceroute` parsing—no hardcoding required. Move seamlessly between home, office, and coffee shop networks. 
 - **ICMP-Bypass (TCP Fallback):** Intelligently detects networks that aggressively block `ping` commands and dynamically fails over to raw TCP Socket connections (Port 53/80) to accurately measure gateway latency without triggering false offline alerts.
-- **"Don't Make Me Think" Dashboard:** Dynamic green/yellow/red status banners that interpret latency without requiring you to read the chart.
+- **Route Ladder:** A landscape home→internet hop path beneath the chart, one rung per network layer (LAN / ISP / external), each colored by tier and showing live per-hop latency. Surfaces *which layer* a slowdown sits in — including the private Local Router and ISP Gateway hops. Fed by a periodic full-path traceroute captured into a `traceroute_hops` table.
+- **At-a-Glance Status Rail:** A compact rail beside the chart shows Overall plus per-layer health (Home Router / ISP Gateway / Internet) as green/yellow/red tiles, so you get the verdict without interpreting the chart. Failures also draw a red "Offline" reference line at the packet-loss sentinel. Chart series use a neutral blue/purple/teal palette so line color denotes *which* target, never health.
 - **Home Network Deployment:** Accessible to any browser on the LAN. 
 - **PWA Ready:** Install the dashboard directly to any iOS/Android home screen.
-- **Native OS Alerts:** Fires `osascript` (macOS) or `notify-send` (Linux) desktop alerts during critical congestion or outages.
+- **Native OS Alerts:** Fires `osascript` (macOS) or `notify-send` (Linux) desktop alerts during critical congestion or outages, with a debounced critical-outage guard.
 
 ## Project Structure
 
@@ -55,11 +58,19 @@ You can still manage the background services manually if you prefer:
 
 ## Database
 
-Data is logged locally to `backend/network_metrics.db`.
-The `network_metrics` table has the following schema:
+Data is logged locally to `backend/network_metrics.db` (WAL mode).
+
+`network_metrics` — per-cycle latency samples:
 * `id` (INTEGER PRIMARY KEY)
-* `timestamp` (DATETIME)
+* `timestamp` (DATETIME, indexed)
 * `target_node` (TEXT)
+* `latency_ms` (REAL) — `-1.0` = failure sentinel
+
+`traceroute_hops` — periodic full-path capture (every ~5 min) for the Route Ladder:
+* `id` (INTEGER PRIMARY KEY)
+* `timestamp` (DATETIME, indexed) — rows sharing a timestamp form one capture
+* `hop_index` (INTEGER)
+* `hop_ip` (TEXT) — public hops only (private/CGNAT excluded)
 * `latency_ms` (REAL)
 
 ## Future Improvements

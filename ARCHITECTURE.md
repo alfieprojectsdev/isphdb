@@ -31,7 +31,10 @@ It dynamically inspects `sys.platform` to format commands appropriately:
 When ICMP is blocked (common on enterprise and public networks), the prober falls back to a TCP socket connect on port 53 (DNS) then port 80 (HTTP). This prevents false offline alerts on ICMP-filtered networks.
 
 ### Telemetry Storage
-All results are appended to a local SQLite database (`backend/network_metrics.db`). The schema consists of a single `network_metrics` table with an indexed `timestamp` column for high-speed time-series retrieval. Total disconnections are stored with a latency of `-1.0` ms. Rows older than 30 days are pruned periodically by the prober to keep the working set bounded. The database runs in WAL mode so the prober (writer) and the SSR dashboard (reader) operate concurrently without SQLITE_BUSY errors.
+All results are appended to a local SQLite database (`backend/network_metrics.db`). The `network_metrics` table (indexed `timestamp`) holds the per-cycle latency samples; total disconnections are stored as `-1.0` ms. Rows older than 30 days are pruned periodically by the prober to keep the working set bounded. The database runs in WAL mode so the prober (writer) and the SSR dashboard (reader) operate concurrently without SQLITE_BUSY errors.
+
+### Periodic Route Capture
+Every `TRACEROUTE_CYCLES` iterations (10, ~5 min — mirroring the prune cadence) the prober runs a full numeric traceroute to `1.1.1.1` and records the hop path into a second table, `traceroute_hops` (`hop_index`, `hop_ip`, `latency_ms`, indexed `timestamp`). This reuses the same per-OS trace (`tracepath`/`traceroute`) and shared pure parser (`parse_traceroute_hops`) that gateway auto-detection uses. Only geolocatable public hops are persisted — LAN, loopback, link-local and `100.64/10` CGNAT hops are filtered out by `is_mappable_hop`, since they cannot be placed on a map. Rows sharing a `timestamp` form one capture; the same 30-day retention prune applies.
 
 ### Anomaly Detection & Alerting
 The prober retains a rolling history of the last 10 minutes (20 data points) for the ISP Gateway. 
@@ -54,6 +57,9 @@ In `src/pages/index.astro`, the server logic uses `better-sqlite3` to query the 
 
 ### Visualization 
 The raw data arrays are injected into an [Apache ECharts](https://echarts.apache.org/) instance rendered on an HTML5 `<canvas>`. The chart is configured with dynamic smoothing (`0.3`) and translucent `areaStyle` gradients for maximum readability.
+
+### Route Geography Panel
+Below the latency chart, a geo panel maps *where* the route physically travels. The same SSR request also reads the most recent `traceroute_hops` capture, joins each hop against a curated static IP→geo table (`src/lib/hop-geo.json`, keyed by IP/CIDR with prefix matching), drops unmappable/unknown hops, and colors each by latency. The client fetches a low-res Philippines outline (`public/philippines.geo.json`), registers it via `echarts.registerMap`, and draws an `effectScatter` hop series plus a `lines` path over the geo coordinate system. Pure, unit-tested helpers (`lookupHopGeo`, `latencyToColor`) live in `src/lib/geo.mjs`; the curated table is refreshed out-of-band by the dev-only `backend/geo_seed.py`. There are no runtime geolocation calls and no added dependencies — the panel shares the existing 30-second reload.
 
 ### Home Network Accessibility (PWA)
 The dashboard is structurally a Progressive Web App (PWA) equipped with a `manifest.json`.

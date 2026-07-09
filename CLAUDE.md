@@ -76,4 +76,9 @@ Targets are auto-detected at startup; the values below are examples only.
 | `external_dns` | `1.1.1.1` | Broader internet routing |
 
 ### DB Schema
-Single table `network_metrics`: `id`, `timestamp` (DATETIME, indexed), `target_node` (TEXT), `latency_ms` (REAL).
+Table `network_metrics`: `id`, `timestamp` (DATETIME, indexed), `target_node` (TEXT), `latency_ms` (REAL).
+
+Table `traceroute_hops`: `id`, `timestamp` (DATETIME, indexed), `hop_index` (INTEGER), `hop_ip` (TEXT), `latency_ms` (REAL). The prober captures the full hop path to `1.1.1.1` every `TRACEROUTE_CYCLES` (10, ~5 min), storing one row per geolocatable (public) hop; rows sharing a `timestamp` form one capture. Only mappable hops are persisted — LAN/CGNAT hops are excluded via `is_mappable_hop`. The dashboard reads the most recent capture for the geo map. Pruned on the same 30-day retention as `network_metrics`.
+
+### Traceroute-Hop Geo Overlay
+The dashboard renders a "Route Geography" panel below the latency chart: the latest `traceroute_hops` capture joined against a curated static IP→geo table (`frontend/src/lib/hop-geo.json`, keyed by IP/CIDR) and drawn on a low-res Philippines map (`frontend/public/philippines.geo.json`) via `echarts.registerMap`, colored by latency. Pure lookup/color helpers live in `frontend/src/lib/geo.mjs`. `backend/geo_seed.py` is a dev-only script to refresh the geo table from a public API — the daemon never calls it. No runtime geo API calls, no new dependencies.

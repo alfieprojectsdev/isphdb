@@ -1,0 +1,6 @@
+{
+  "_comment": "Curated IP/CIDR -> {lat, lon, label} for the stable public hops on this connection's route to 1.1.1.1. CIDR keys are matched by prefix so per-run host variance within a block (e.g. 161.49.4.6 vs 161.49.7.238) still resolves. Regenerate/extend with backend/geo_seed.py. Coordinates are approximate ISP-node / edge-POP locations.",
+  "161.49.0.0/16": { "lat": 14.65, "lon": 121.03, "label": "Converge ICT — Metro Manila" },
+  "162.158.0.0/16": { "lat": 14.55, "lon": 120.98, "label": "Cloudflare Edge — Manila" },
+  "172.69.0.0/16": { "lat": 14.60, "lon": 121.00, "label": "Cloudflare Edge — Manila" }
+}

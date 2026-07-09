@@ -221,7 +221,7 @@ const statusColor = (s) => (s === 'good' ? '#3fb950' : s === 'warn' ? '#d29922' 
          narrow screens. Replaces the old full-width summary banner. */
       .content-row {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 210px;
+        grid-template-columns: minmax(0, 1fr) 190px;
         gap: 1.5rem;
         align-items: stretch;
       }
@@ -256,6 +256,8 @@ const statusColor = (s) => (s === 'good' ? '#3fb950' : s === 'warn' ? '#d29922' 
       }
       .st-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
       .st-msg { font-size: 0.9rem; font-weight: 600; color: #f0f6fc; }
+      /* Monitoring pill lives at the foot of the rail, below the status tiles. */
+      .status.monitoring { justify-content: center; margin-top: 0.25rem; }
       #chart-container, #ladder-container {
         background: var(--card-bg);
         border-radius: 12px;
@@ -355,10 +357,6 @@ const statusColor = (s) => (s === 'good' ? '#3fb950' : s === 'warn' ? '#d29922' 
     <div class="container">
       <header>
         <h1>Network Health Dashboard</h1>
-        <div class="status">
-          <div class="pulse"></div>
-          Monitoring Last 3 Hours
-        </div>
       </header>
 
       <div class="legend-strip">
@@ -400,6 +398,10 @@ const statusColor = (s) => (s === 'good' ? '#3fb950' : s === 'warn' ? '#d29922' 
               <div class="status-tile">
                 <div class="st-head"><span class="st-dot" style={`background-color: ${statusColor(dnsStatus.status)}`}></span>Internet</div>
                 <div class="st-msg">{dnsStatus.msg}</div>
+              </div>
+              <div class="status monitoring">
+                <div class="pulse"></div>
+                Monitoring Last 3 Hours
               </div>
             </aside>
           </div>

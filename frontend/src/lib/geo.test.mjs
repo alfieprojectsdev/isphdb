@@ -58,6 +58,7 @@ test('latencyToColor: sentinel latency -> offline red', () => {
 // tierColor
 
 test('tierColor: known tiers map to the palette', () => {
+  assert.equal(tierColor('lan'), TIER_COLORS.lan);
   assert.equal(tierColor('isp'), TIER_COLORS.isp);
   assert.equal(tierColor('external'), TIER_COLORS.external);
 });

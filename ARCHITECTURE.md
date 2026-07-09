@@ -58,8 +58,15 @@ In `src/pages/index.astro`, the server logic uses `better-sqlite3` to query the 
 ### Visualization 
 The raw data arrays are injected into an [Apache ECharts](https://echarts.apache.org/) instance rendered on an HTML5 `<canvas>`. The chart is configured with dynamic smoothing (`0.3`) and translucent `areaStyle` gradients for maximum readability.
 
-### Route Geography Panel
-Below the latency chart, a geo panel maps *where* the route physically travels. The same SSR request also reads the most recent `traceroute_hops` capture, joins each hop against a curated static IP→geo table (`src/lib/hop-geo.json`, keyed by IP/CIDR with prefix matching), drops unmappable/unknown hops, and colors each by latency. The client fetches a low-res Philippines outline (`public/philippines.geo.json`), registers it via `echarts.registerMap`, and draws an `effectScatter` hop series plus a `lines` path over the geo coordinate system. Pure, unit-tested helpers (`lookupHopGeo`, `latencyToColor`) live in `src/lib/geo.mjs`; the curated table is refreshed out-of-band by the dev-only `backend/geo_seed.py`. There are no runtime geolocation calls and no added dependencies — the panel shares the existing 30-second reload.
+### Route Ladder
+Directly below the full-width latency chart sits a landscape "Route Ladder": an ordered home→internet path that answers *which layer* a problem sits in. It is rendered entirely server-side (no client script, no map). The same SSR request supplies the pieces:
+- **Local Router** and **ISP Gateway** rungs reuse the monitored targets' most recent latency. These hops are on your private segment (RFC1918) and have no geolocation, but the ladder needs none — so, unlike the earlier map experiment, it can show them.
+- The middle rungs are the most recent `traceroute_hops` capture, each resolved through the curated `src/lib/hop-geo.json` for a human label and network-reach tier (`isp` vs `external`).
+- The final rung is the destination, `1.1.1.1`.
+
+Each rung shows a tier-colored node (LAN blue / ISP purple / external teal, matching the chart's series palette) and its latency colored by the shared `latencyToColor` thresholds; `-1`/`500` renders as "timeout". A metro-clustered geographic map conveyed little here (every public hop is in the same city); the ladder instead makes the ISP→external latency step and per-layer health immediately legible. Helpers live in `src/lib/geo.mjs`; the label/tier table is refreshed out-of-band by the dev-only `backend/geo_seed.py`. No runtime calls, no added dependencies — the panel shares the existing 30-second reload.
+
+The chart additionally draws a red dashed reference line at the 500ms failure sentinel (labeled "Offline"), shown only when a target is currently failing so it never distorts the axis during normal operation.
 
 ### Home Network Accessibility (PWA)
 The dashboard is structurally a Progressive Web App (PWA) equipped with a `manifest.json`.

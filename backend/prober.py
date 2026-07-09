@@ -4,6 +4,8 @@ import sys
 import time
 from datetime import datetime, timezone
 import os
+import re
+import ipaddress
 import subprocess
 import socket
 
@@ -15,6 +17,9 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "network_metrics.db")
 INTERVAL_SECONDS = 30
 ANOMALY_WINDOW = 20
 PRUNE_CYCLES = 120
+# Capture the full traceroute hop path every N cycles (~5 min at 30s) for the geo map,
+# mirroring the PRUNE_CYCLES cadence pattern. Cheap: 1-in-N cycles, 10-hop cap.
+TRACEROUTE_CYCLES = 10
 RETENTION_DAYS = 30
 # Consecutive cycles where BOTH the ISP gateway and external DNS must fail before
 # firing the critical "no internet" alert. Debounces cold-start / transient single
@@ -36,6 +41,18 @@ def init_db():
     ''')
     # Index for faster time-series querying
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON network_metrics(timestamp)')
+    # Per-capture traceroute hop path (populated every TRACEROUTE_CYCLES). Rows sharing a
+    # timestamp form one capture; the frontend reads the latest capture for the geo map.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS traceroute_hops (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            hop_index INTEGER,
+            hop_ip TEXT,
+            latency_ms REAL
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hops_timestamp ON traceroute_hops(timestamp)')
     conn.commit()
     return conn
 
@@ -121,44 +138,92 @@ def is_valid_ipv4(token):
     except (OSError, TypeError):
         return False
 
-def get_isp_gateway():
-    """Dynamically trace route to DNS and extract the first hop outside the local network."""
+def is_mappable_hop(ip):
+    """True only for a public, geolocatable IPv4 address. Excludes None and every
+    private/loopback/link-local/CGNAT range (192.168/16, 10/8, 172.16/12, 100.64/10,
+    127/8, 169.254/16) — those can never be placed on the geo map."""
+    if not ip or not is_valid_ipv4(ip):
+        return False
     try:
-        if sys.platform == 'darwin':
-            # traceroute to 1.1.1.1, max 5 hops, numeric IPs only
-            res = subprocess.run(['traceroute', '-m', '5', '-n', EXTERNAL_DNS_IP], capture_output=True, text=True)
-            for line in res.stdout.splitlines():
-                stripped_line = line.strip()
-                if len(stripped_line) > 0 and stripped_line[0].isdigit(): # Hit a hop line
-                    parts = stripped_line.split()
-                    if len(parts) > 1 and is_valid_ipv4(parts[1]):
-                        ip = parts[1]
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    # 100.64.0.0/10 (CGNAT / RFC 6598 shared space) is not flagged is_private on all
+    # Python versions but is just as ungeolocatable, so exclude it explicitly.
+    if addr in ipaddress.ip_network('100.64.0.0/10'):
+        return False
+    return not (addr.is_private or addr.is_loopback or addr.is_link_local)
 
-                        # [DEVELOPER NOTE: Bypassing Double NAT]
-                        # Home setups often employ a "Double NAT" (e.g., a Google WiFi mesh router plugged into a Converge ISP modem).
-                        # Both routers usually assign local 192.168.x.x addresses.
-                        # To find the true outside ISP gateway (the neighborhood connection node), we ignore any hops
-                        # that fall within the private 192.168.* IP space. The highest routing logic applies here.
-                        if not ip.startswith('192.168.'):
-                            return ip
-        else:
-            # Linux: use tracepath or traceroute
-            cmd = ['tracepath', '-m', '5', '-n', EXTERNAL_DNS_IP] if os.path.exists('/usr/bin/tracepath') else ['traceroute', '-m', '5', '-n', EXTERNAL_DNS_IP]
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            for line in res.stdout.splitlines():
-                parts = line.split()
-                if len(parts) > 1:
-                    ip = None
-                    if line.strip().startswith(tuple(str(i)+':' for i in range(1, 6))) and is_valid_ipv4(parts[1]): # tracepath format
-                        ip = parts[1]
-                    elif line.strip().startswith(tuple(str(i)+' ' for i in range(1, 6))) and is_valid_ipv4(parts[1]): # traceroute format
-                        ip = parts[1]
+def _traceroute_cmd(max_hops):
+    """Per-OS numeric trace command to EXTERNAL_DNS_IP, capped at max_hops."""
+    if sys.platform != 'darwin' and os.path.exists('/usr/bin/tracepath'):
+        return ['tracepath', '-m', str(max_hops), '-n', EXTERNAL_DNS_IP]
+    return ['traceroute', '-m', str(max_hops), '-n', EXTERNAL_DNS_IP]
 
-                    if ip and not ip.startswith('192.168.'):
-                        return ip
+def parse_traceroute_hops(stdout, platform=None):
+    """Pure parser shared by gateway detection and full hop capture. Returns an ordered
+    list of {'hop_index', 'ip', 'latency_ms'} for numeric hop lines of either macOS/Linux
+    traceroute ('N  IP  X.XXX ms') or Linux tracepath ('N:  IP  X.XXXms'). Starred /
+    'no reply' / unreachable hops yield ip=None and latency_ms=-1.0. Multiple probe lines
+    for the same hop (tracepath retries, 'N?:' PMTU lines) collapse to one entry, keeping
+    the first line that carries a valid IP. `platform` is accepted for API stability; the
+    parse is format-agnostic and does not currently branch on it."""
+    hops = {}
+    order = []
+    for line in stdout.splitlines():
+        m = re.match(r'^\s*(\d+)[:?\s]', line)
+        if not m:
+            continue
+        hop_index = int(m.group(1))
+        ip = next((tok for tok in line.split() if is_valid_ipv4(tok)), None)
+        lm = re.search(r'(\d+(?:\.\d+)?)\s*ms', line)
+        latency = float(lm.group(1)) if lm else -1.0
+        entry = {'hop_index': hop_index, 'ip': ip, 'latency_ms': latency}
+        if hop_index not in hops:
+            hops[hop_index] = entry
+            order.append(hop_index)
+        elif hops[hop_index]['ip'] is None and ip is not None:
+            # First real IP wins over an earlier starred/PMTU-discovery line for this hop.
+            hops[hop_index] = entry
+    return [hops[i] for i in order]
+
+def get_isp_gateway():
+    """Dynamically trace route to DNS and return the first hop outside the LAN's
+    192.168.* space (the physical ISP line). Deliberately NOT is_mappable_hop: the ISP's
+    first node is often a 10.x CGNAT address we still want to monitor for latency even
+    though it cannot be geolocated on the map."""
+    try:
+        res = subprocess.run(_traceroute_cmd(5), capture_output=True, text=True)
+        for hop in parse_traceroute_hops(res.stdout, sys.platform):
+            ip = hop['ip']
+            # [DEVELOPER NOTE: Bypassing Double NAT]
+            # Home setups often employ a "Double NAT" (e.g., a Google WiFi mesh router
+            # plugged into a Converge ISP modem). Both routers assign 192.168.x.x. Skip
+            # those to reach the true outside ISP gateway (the neighborhood connection node).
+            if ip and not ip.startswith('192.168.'):
+                return ip
     except Exception as e:
         print(f"Error auto-detecting ISP gateway: {e}")
     return FALLBACK_ISP_GATEWAY_IP
+
+def capture_route_hops(cursor, conn, now):
+    """Run a full numeric trace and persist each geolocatable (mappable) hop of the current
+    path under a single shared `now` timestamp. Unmappable hops (LAN/CGNAT) are skipped."""
+    try:
+        res = subprocess.run(_traceroute_cmd(10), capture_output=True, text=True)
+        saved = 0
+        for hop in parse_traceroute_hops(res.stdout, sys.platform):
+            if not is_mappable_hop(hop['ip']):
+                continue
+            cursor.execute(
+                "INSERT INTO traceroute_hops (timestamp, hop_index, hop_ip, latency_ms) VALUES (?, ?, ?, ?)",
+                (now, hop['hop_index'], hop['ip'], hop['latency_ms'])
+            )
+            saved += 1
+        conn.commit()
+        print(f"[{now}] Captured {saved} mappable route hop(s).")
+    except Exception as e:
+        print(f"Error capturing route hops: {e}")
 
 def check_isp_anomaly(latency, isp_history):
     """Append latency sample, trim history, and return an alert message if a spike is detected."""
@@ -176,10 +241,9 @@ def check_isp_anomaly(latency, isp_history):
 
 def prune_old_rows(cursor, conn):
     """Delete rows older than RETENTION_DAYS to bound DB size."""
-    cursor.execute(
-        "DELETE FROM network_metrics WHERE timestamp < datetime('now', ?)",
-        (f'-{RETENTION_DAYS} days',)
-    )
+    cutoff = f'-{RETENTION_DAYS} days'
+    cursor.execute("DELETE FROM network_metrics WHERE timestamp < datetime('now', ?)", (cutoff,))
+    cursor.execute("DELETE FROM traceroute_hops WHERE timestamp < datetime('now', ?)", (cutoff,))
     conn.commit()
 
 def run_prober():
@@ -266,6 +330,11 @@ def run_prober():
             conn.commit()
         except sqlite3.OperationalError as e:
             print(f"[ERROR] DB write failed: {e}")
+
+        # Periodic full-path capture for the geo map (cycle 0 fires immediately so the
+        # panel has data on first run rather than waiting ~5 min).
+        if cycle % TRACEROUTE_CYCLES == 0:
+            capture_route_hops(cursor, conn, now)
 
         cycle += 1
         if cycle % PRUNE_CYCLES == 0:

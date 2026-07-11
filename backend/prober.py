@@ -25,6 +25,12 @@ RETENTION_DAYS = 30
 # firing the critical "no internet" alert. Debounces cold-start / transient single
 # misses (interface just up, first ICMP dropped) that are not real outages.
 CRITICAL_FAIL_STREAK = 3
+# When the ISP gateway keeps failing while the internet (DNS) is reachable, the detected
+# gateway IP is probably stale/wrong — e.g. detection fell back to FALLBACK_ISP_GATEWAY_IP
+# at boot before the network was up, and the one-shot startup detection never re-ran. After
+# this many such cycles, re-run detection once and adopt a new, valid IP. Self-heals the
+# boot-time misdetection that otherwise pins the gateway line at 500ms until a manual restart.
+REDETECT_AFTER_FAILS = 5
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -281,6 +287,8 @@ def run_prober():
     cycle = 0
     dns_down_streak = 0
     critical_alerted = False
+    gateway_fail_streak = 0
+    gateway_redetect_tried = False
 
     while True:
         # SQLite-canonical UTC format ('YYYY-MM-DD HH:MM:SS') so datetime() comparisons
@@ -307,6 +315,8 @@ def run_prober():
                         # ISP gateway reachable -> internet is up; clear any pending outage state.
                         dns_down_streak = 0
                         critical_alerted = False
+                        gateway_fail_streak = 0
+                        gateway_redetect_tried = False
                     else:
                         # ISP gateway ping failed. To avoid false positives on networks that block
                         # pings to the gateway, only treat this as an outage if external DNS is ALSO
@@ -326,6 +336,18 @@ def run_prober():
                             dns_down_streak = 0
                             critical_alerted = False
                             print(f"[{now}] ISP Gateway ping blocked, but Internet (DNS) is reachable. Suppressing false alert.")
+                            # Internet is up but the gateway is unreachable. If this persists, the
+                            # detected gateway IP is probably stale (boot-time fallback). Re-detect
+                            # once and adopt a new, valid IP so the daemon self-heals without a restart.
+                            gateway_fail_streak += 1
+                            if gateway_fail_streak >= REDETECT_AFTER_FAILS and not gateway_redetect_tried:
+                                gateway_redetect_tried = True
+                                new_gateway = get_isp_gateway()
+                                if new_gateway != ip and new_gateway != FALLBACK_ISP_GATEWAY_IP:
+                                    print(f"[{now}] ISP gateway re-detected: {ip} -> {new_gateway}. Switching target.")
+                                    targets['isp_gateway'] = new_gateway
+                                else:
+                                    print(f"[{now}] ISP gateway re-detection returned {new_gateway}; keeping {ip}.")
 
             conn.commit()
         except sqlite3.OperationalError as e:
